@@ -48,6 +48,7 @@ const BUY_TIME = 25;
 const ROUND_TIME = 105;
 const BOMB_TIME = 40;
 const TARGET_SCORE = 8;
+const MAX_MONEY = 16000;
 
 const game = {
   state: 'menu',
@@ -91,8 +92,10 @@ const player = {
   recoilPitch: 0, recoilYaw: 0, recoilShots: 0, heat: 0,
   scope: false, flashTimer: 0, viewKick: 0,
   bob: 0, stepDist: 0,
-  defusing: false, crossSpread: 0,
-  knifeSwing: 0
+  defusing: false, planting: false, crossSpread: 0,
+  knifeSwing: 0,
+  team: 'ct',
+  name: 'OPERADOR'
 };
 
 let bots = [];
@@ -402,7 +405,7 @@ function tryShoot() {
       const d = dist2D(player.x, player.y, b.x, b.y);
       if (d > 2.0) continue;
       const ang = Math.atan2(b.y - player.y, b.x - player.x);
-      if (Math.abs(angleDiff(ang, player.yaw)) < 0.8) { hit = b; break; }
+      if (Math.abs(angleDiff(ang, player.yaw)) < 0.8 && losClear(player.x, player.y, b.x, b.y)) { hit = b; break; }
     }
     if (hit) damageBot(hit, def.dmg, false, hit.x, hit.y, 0.55);
     return;
@@ -439,6 +442,15 @@ function tryShoot() {
   const yaw = player.yaw + player.recoilYaw + rand(-spread, spread);
   const pitch = clamp(player.pitch + player.recoilPitch + rand(-spread, spread) * 0.65, -0.5, 0.5);
   shootHitscan(yaw, pitch, def);
+
+  if (window.Multiplayer && Multiplayer.active) {
+    const eyeH = getEyeHeight() - 0.09;
+    Multiplayer.sendShoot(
+      player.x, player.y, eyeH,
+      player.x + Math.cos(yaw) * 40, player.y + Math.sin(yaw) * 40, eyeH + Math.tan(pitch) * 40,
+      def.id, def.sound
+    );
+  }
 
   for (const b of bots) {
     if (!b.alive) continue;
@@ -501,9 +513,10 @@ function nextRound() {
   player.alive = true;
   player.hp = 100;
   player.armor = 0;
-  player.x = CT_SPAWN.x;
-  player.y = CT_SPAWN.y;
-  player.yaw = CT_SPAWN.yaw;
+  const spawn = player.team === 't' ? T_SPAWNS[0] : CT_SPAWN;
+  player.x = spawn.x;
+  player.y = spawn.y;
+  player.yaw = player.team === 't' ? -Math.PI / 2 : CT_SPAWN.yaw;
   player.pitch = -0.02;
   player.vx = 0; player.vy = 0; player.vz = 0; player.z = 0;
   player.eyeOff = 0;
@@ -553,7 +566,7 @@ function endRound(ctWin, reason) {
   if (ctWin) game.ctScore++; else game.tScore++;
   const reward = ctWin ? 3000 : 1900;
   game.roundReward = reward;
-  player.money += reward;
+  player.money = Math.min(MAX_MONEY, player.money + reward);
   player.defusing = false;
   player.scope = false;
   mouseDown = false;

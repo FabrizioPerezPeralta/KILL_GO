@@ -33,8 +33,22 @@ const ui = {
   radar: $('radar')
 };
 
-game.sens = parseFloat(localStorage.getItem('dust_sens')) || 2.2;
-game.difficulty = localStorage.getItem('dust_diff') || 'normal';
+function safeGetStorage(key, fallback) {
+  try {
+    const val = localStorage.getItem(key);
+    return val !== null ? val : fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+function safeSetStorage(key, val) {
+  try {
+    localStorage.setItem(key, String(val));
+  } catch (e) {}
+}
+
+game.sens = parseFloat(safeGetStorage('dust_sens', '2.2')) || 2.2;
+game.difficulty = safeGetStorage('dust_diff', 'normal');
 if (!DIFF[game.difficulty]) game.difficulty = 'normal';
 
 const keys = Object.create(null);
@@ -46,8 +60,9 @@ let shopBuilt = false;
    PANTALLAS / AVISOS
    --------------------------------------------------------------------- */
 function hideAllScreens() {
-  for (const el of [ui.menu, ui.buy, ui.pause, ui.roundOver, ui.gameOver, ui.scoreboard, ui.lockHint]) {
-    el.classList.add('hidden');
+  const screens = [ui.menu, ui.buy, ui.pause, ui.roundOver, ui.gameOver, ui.scoreboard, ui.lockHint, $('userModal'), $('mpLobby')];
+  for (const el of screens) {
+    if (el) el.classList.add('hidden');
   }
   const warn = document.querySelector('.plant-warning');
   if (warn) warn.remove();
@@ -374,6 +389,15 @@ function updateScoreboard() {
   setText(ui.bAlive, String(bots.filter(b => b.alive).length));
   setText(ui.bRound, String(Math.max(1, game.round)));
   setText(ui.boardScore, `CT ${game.ctScore} — ${game.tScore} T`);
+
+  const ctRow = document.querySelector('.ct-row span:first-child');
+  if (ctRow) {
+    ctRow.textContent = player.team === 'ct' ? `${player.name || 'TÚ'} · CT` : 'DEFENSORES CT';
+  }
+  const tRow = document.querySelector('.t-row span:first-child');
+  if (tRow) {
+    tRow.textContent = player.team === 't' ? `${player.name || 'TÚ'} · T` : 'FUERZAS T';
+  }
 }
 
 /* ---------------------------------------------------------------------
@@ -723,19 +747,22 @@ window.addEventListener('keydown', (e) => {
   }
   if (game.state === 'buy') {
     if (e.code === 'Enter' || e.code === 'NumpadEnter') beginLive();
-    else if (/^Digit[1-6]$/.test(e.code)) buyItem(parseInt(e.code.slice(5), 10) - 1);
+    else if (/^(Digit|Numpad)[1-6]$/.test(e.code)) {
+      const num = parseInt(e.code.replace(/^(Digit|Numpad)/, ''), 10);
+      buyItem(num - 1);
+    }
     return;
   }
   if (game.state === 'live') {
     if (e.code === 'KeyR' && !e.repeat) startReload();
-    if (e.code === 'Digit1' && !e.repeat) selectSlot(1);
-    if (e.code === 'Digit2' && !e.repeat) selectSlot(2);
-    if (e.code === 'Digit3' && !e.repeat) selectSlot(3);
+    if ((e.code === 'Digit1' || e.code === 'Numpad1') && !e.repeat) selectSlot(1);
+    if ((e.code === 'Digit2' || e.code === 'Numpad2') && !e.repeat) selectSlot(2);
+    if ((e.code === 'Digit3' || e.code === 'Numpad3') && !e.repeat) selectSlot(3);
     if (e.code === 'Space' && !e.repeat) player.jumpQueued = true;
     return;
   }
   if (game.state === 'paused') {
-    if (e.code === 'Enter') resumeGame();
+    if (e.code === 'Enter' || e.code === 'Escape') resumeGame();
     return;
   }
   if (game.state === 'roundover') {
@@ -781,6 +808,22 @@ ui.canvas.addEventListener('click', () => {
   if (game.state === 'live' && !locked) tryLockPointer();
 });
 
+window.addEventListener('wheel', (e) => {
+  if (game.state !== 'live' || !player.alive) return;
+  const availableSlots = [1, 2, 3].filter(s => player.slots[s]);
+  if (availableSlots.length <= 1) return;
+  const curIdx = availableSlots.indexOf(player.slot);
+  let nextIdx;
+  if (e.deltaY > 0) {
+    nextIdx = (curIdx + 1) % availableSlots.length;
+  } else if (e.deltaY < 0) {
+    nextIdx = (curIdx - 1 + availableSlots.length) % availableSlots.length;
+  }
+  if (nextIdx !== undefined && availableSlots[nextIdx] !== player.slot) {
+    selectSlot(availableSlots[nextIdx]);
+  }
+}, { passive: true });
+
 function showScoreboard(show) {
   if (show) {
     if (!['live', 'paused', 'buy', 'roundover'].includes(game.state)) return;
@@ -796,7 +839,7 @@ function showScoreboard(show) {
    --------------------------------------------------------------------- */
 function setSensitivity(v) {
   game.sens = clamp(parseFloat(v) || 2.2, 0.3, 8);
-  localStorage.setItem('dust_sens', String(game.sens));
+  safeSetStorage('dust_sens', String(game.sens));
   $('sens').value = game.sens;
   $('sens2').value = game.sens;
   $('sensVal').textContent = game.sens.toFixed(1);
@@ -807,12 +850,18 @@ function initUI() {
   buildRadarBg();
   setSensitivity(game.sens);
 
+  // detector táctil informativo
+  if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+    const tn = $('touchNotice');
+    if (tn) tn.classList.remove('hidden');
+  }
+
   // dificultad
   document.querySelectorAll('.diff').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.diff === game.difficulty);
     btn.addEventListener('click', () => {
       game.difficulty = btn.dataset.diff;
-      localStorage.setItem('dust_diff', game.difficulty);
+      safeSetStorage('dust_diff', game.difficulty);
       document.querySelectorAll('.diff').forEach(b => b.classList.toggle('active', b.dataset.diff === game.difficulty));
       ensureAudio();
     });
@@ -823,6 +872,65 @@ function initUI() {
   });
 
   $('playBtn').addEventListener('click', startMatch);
+  const playSingle = $('playSingleBtn');
+  if (playSingle) playSingle.addEventListener('click', () => { game.mode = 'single'; startMatch(); });
+  const openMp = $('openMpBtn');
+  if (openMp) openMp.addEventListener('click', openMultiplayerLobby);
+  const backLobby = $('backToMenuFromLobbyBtn');
+  if (backLobby) backLobby.addEventListener('click', () => { hideAllScreens(); ui.menu.classList.remove('hidden'); });
+
+  const createRoom = $('createRoomBtn');
+  if (createRoom) createRoom.addEventListener('click', () => {
+    Multiplayer.createRoom();
+    $('lobbyJoinSection').classList.add('hidden');
+    $('lobbyRoomSection').classList.remove('hidden');
+    $('roomLinkInput').value = Multiplayer.getShareUrl();
+  });
+
+  const joinRoom = $('joinRoomBtn');
+  if (joinRoom) joinRoom.addEventListener('click', () => {
+    const code = ($('joinRoomCodeInput').value || '').trim();
+    if (!code) { toast('INGRESA UN CÓDIGO DE SALA'); return; }
+    Multiplayer.joinRoom(code);
+    $('lobbyJoinSection').classList.add('hidden');
+    $('lobbyRoomSection').classList.remove('hidden');
+    $('roomLinkInput').value = Multiplayer.getShareUrl(code);
+  });
+
+  const copyLink = $('copyRoomLinkBtn');
+  if (copyLink) copyLink.addEventListener('click', () => {
+    const link = $('roomLinkInput').value || Multiplayer.getShareUrl();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(link).then(() => {
+        const prev = copyLink.textContent;
+        copyLink.textContent = '¡COPIADO! ✓';
+        setTimeout(() => copyLink.textContent = prev, 2000);
+        toast('ENLACE COPIADO AL PORTAPAPELES');
+      }).catch(() => toast('COPIA EL ENLACE MANUALMENTE'));
+    } else {
+      $('roomLinkInput').select();
+      toast('COPIA EL ENLACE DEL CUADRO');
+    }
+  });
+
+  const joinCt = $('joinCtBtn');
+  if (joinCt) joinCt.addEventListener('click', () => Multiplayer.selectTeam('ct'));
+  const joinT = $('joinTBtn');
+  if (joinT) joinT.addEventListener('click', () => Multiplayer.selectTeam('t'));
+
+  const fillCheck = $('fillBotsCheck');
+  if (fillCheck) fillCheck.addEventListener('change', (e) => { Multiplayer.fillBots = e.target.checked; });
+
+  const startMp = $('startMpMatchBtn');
+  if (startMp) startMp.addEventListener('click', () => Multiplayer.startMatch());
+
+  const leaveRoom = $('leaveRoomBtn');
+  if (leaveRoom) leaveRoom.addEventListener('click', () => {
+    Multiplayer.leaveRoom();
+    $('lobbyJoinSection').classList.remove('hidden');
+    $('lobbyRoomSection').classList.add('hidden');
+  });
+
   ui.readyBtn.addEventListener('click', beginLive);
   $('resumeBtn').addEventListener('click', resumeGame);
   $('quitBtn').addEventListener('click', quitToMenu);
@@ -830,7 +938,91 @@ function initUI() {
   $('goRestart').addEventListener('click', startMatch);
   $('goMenu').addEventListener('click', quitToMenu);
 
-  window.addEventListener('blur', () => { mouseDown = false; for (const k in keys) keys[k] = false; });
+  window.addEventListener('blur', () => {
+    mouseDown = false;
+    for (const k in keys) keys[k] = false;
+    showScoreboard(false);
+  });
+
+  initUsername();
+}
+
+function openMultiplayerLobby() {
+  hideAllScreens();
+  const lobby = $('mpLobby');
+  if (lobby) lobby.classList.remove('hidden');
+  const joinSec = $('lobbyJoinSection');
+  const roomSec = $('lobbyRoomSection');
+  if (Multiplayer.active || Multiplayer.inLobby) {
+    if (joinSec) joinSec.classList.add('hidden');
+    if (roomSec) roomSec.classList.remove('hidden');
+  } else {
+    if (joinSec) joinSec.classList.remove('hidden');
+    if (roomSec) roomSec.classList.add('hidden');
+  }
+}
+
+function initUsername() {
+  player.name = (safeGetStorage('dust_username', '') || '').trim();
+  const modal = $('userModal');
+  const input = $('usernameInput');
+  const err = $('usernameError');
+  const display = $('displayUsername');
+  const lobbyDisp = $('lobbyUsername');
+
+  function updateDisplays() {
+    const n = player.name || 'OPERADOR';
+    if (display) display.textContent = n;
+    if (lobbyDisp) lobbyDisp.textContent = n;
+  }
+
+  function submitName() {
+    const val = (input.value || '').trim();
+    if (val.length < 2 || val.length > 14) {
+      if (err) err.classList.remove('hidden');
+      return;
+    }
+    if (err) err.classList.add('hidden');
+    player.name = val;
+    safeSetStorage('dust_username', player.name);
+    updateDisplays();
+    if (modal) modal.classList.add('hidden');
+
+    const autoRoom = Multiplayer.checkUrlForRoom();
+    if (autoRoom) {
+      openMultiplayerLobby();
+      $('joinRoomCodeInput').value = autoRoom;
+      $('joinRoomBtn').click();
+    }
+  }
+
+  $('saveUsernameBtn').addEventListener('click', submitName);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') submitName();
+  });
+
+  const editBtn = $('editUsernameBtn');
+  if (editBtn) {
+    editBtn.addEventListener('click', () => {
+      input.value = player.name || '';
+      if (err) err.classList.add('hidden');
+      if (modal) modal.classList.remove('hidden');
+      input.focus();
+    });
+  }
+
+  if (!player.name) {
+    if (modal) modal.classList.remove('hidden');
+    setTimeout(() => input.focus(), 100);
+  } else {
+    updateDisplays();
+    const autoRoom = Multiplayer.checkUrlForRoom();
+    if (autoRoom) {
+      openMultiplayerLobby();
+      $('joinRoomCodeInput').value = autoRoom;
+      $('joinRoomBtn').click();
+    }
+  }
 }
 
 /* ---------------------------------------------------------------------
@@ -844,6 +1036,10 @@ function loop(now) {
   game.time += dt;
 
   Renderer.tick(dt);
+
+  if (window.Multiplayer && Multiplayer.active) {
+    Multiplayer.tick(now);
+  }
 
   if (game.state === 'menu') {
     updateAttract();

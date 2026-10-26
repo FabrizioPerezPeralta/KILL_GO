@@ -93,6 +93,13 @@ setWallRect(32, 19, 32, 19, 2);    // pasillo largo T
 setWallRect(30, 12, 30, 13, 4);
 
 const CT_SPAWN = { x: 7.5, y: 33.5, yaw: -Math.PI / 2 };
+const CT_SPAWNS = [
+  { x: 7.5, y: 33.5, yaw: -Math.PI / 2 },
+  { x: 5.5, y: 33.5, yaw: -Math.PI / 2 },
+  { x: 9.5, y: 33.5, yaw: -Math.PI / 2 },
+  { x: 6.5, y: 35.5, yaw: -Math.PI / 2 },
+  { x: 8.5, y: 35.5, yaw: -Math.PI / 2 }
+];
 const PLANT_SPOT = { x: 8.5, y: 9.5 };
 const SITE_CENTER = { x: 9, y: 9 };
 const T_SPAWNS = [
@@ -415,6 +422,11 @@ const PALETTES = [
   { shirt: '#4d5148', shirtDark: '#393d36', pants: '#2b2f31', boots: '#141516', mask: '#1d1d1c', band: '#8f6a2c', vest: '#333a33' }
 ];
 
+const PALETTES_CT = [
+  { shirt: '#283848', shirtDark: '#1c2834', pants: '#1b222a', boots: '#0e1115', helmet: '#18222b', visor: '#3b86c4', vest: '#161e26' },
+  { shirt: '#334250', shirtDark: '#242f3a', pants: '#1e242c', boots: '#101317', helmet: '#202a33', visor: '#4fa3e0', vest: '#1c252e' }
+];
+
 function drawBot(g, pose, variant) {
   const p = PALETTES[variant & 1];
   const S = 96;
@@ -522,6 +534,98 @@ function drawBot(g, pose, variant) {
   g.fillStyle = '#1b1713'; g.fillRect(30, 29, 6, 4);
 }
 
+function drawCTBot(g, pose, variant) {
+  const p = PALETTES_CT[variant & 1];
+  const S = 96;
+  g.clearRect(0, 0, 64, S);
+  g.lineJoin = 'round';
+
+  // sombra
+  g.fillStyle = 'rgba(0,0,0,.28)';
+  g.beginPath(); g.ellipse(32, 92, 15, 3, 0, 0, TAU); g.fill();
+
+  const walk = pose === 'walk1' ? -1 : pose === 'walk2' ? 1 : 0;
+  const lx1 = 23 + (walk < 0 ? -3 : walk > 0 ? 3 : 0);
+  const lx2 = 34 + (walk > 0 ? -2 : walk < 0 ? 2 : 0);
+  const lift1 = walk < 0 ? 2 : 0, lift2 = walk > 0 ? 2 : 0;
+
+  // piernas tácticas
+  fillRR(g, lx1, 57, 9, 28 - lift1, 4, p.pants, 'rgba(10,12,15,.7)');
+  fillRR(g, lx2, 57, 9, 28 - lift2, 4, p.pants, 'rgba(10,12,15,.7)');
+  fillRR(g, lx1 - 1, 82 - lift1, 11, 8, 2, p.boots, 'rgba(0,0,0,.85)');
+  fillRR(g, lx2 - 1, 82 - lift2, 11, 8, 2, p.boots, 'rgba(0,0,0,.85)');
+  g.fillStyle = 'rgba(10,15,20,.6)';
+  g.fillRect(lx1 + 1, 68, 7, 5); g.fillRect(lx2 + 1, 68, 7, 5);
+
+  // torso y chaleco kevlar CT
+  fillRR(g, 20, 31, 24, 32, 5, p.shirt, 'rgba(10,15,20,.75)');
+  fillRR(g, 21, 36, 22, 20, 3, p.vest, 'rgba(10,15,20,.6)');
+  g.fillStyle = p.shirtDark;
+  g.fillRect(24, 43, 6, 8); g.fillRect(31, 43, 6, 8); g.fillRect(38, 44, 4, 7);
+  g.fillStyle = 'rgba(100,180,255,.3)';
+  g.fillRect(25, 40, 14, 2); // franja táctica CT
+  g.fillStyle = '#16191c'; g.fillRect(20, 57, 24, 4);
+
+  // hombros
+  g.fillStyle = p.shirtDark;
+  g.beginPath(); g.ellipse(20, 36, 5, 6, -0.2, 0, TAU); g.fill();
+  g.beginPath(); g.ellipse(44, 36, 5, 6, 0.2, 0, TAU); g.fill();
+
+  // arma y brazos
+  const shoot = pose === 'shoot';
+  if (shoot) {
+    g.save();
+    g.translate(16, 49);
+    g.rotate(-0.02);
+    g.fillStyle = '#1b1d1e'; g.fillRect(0, 0, 34, 5);
+    g.fillStyle = '#2d3336'; g.fillRect(6, -2, 18, 3);
+    g.fillStyle = '#141617'; g.fillRect(26, 1, 12, 2.5);
+    g.fillStyle = '#0f1112'; g.fillRect(12, 4, 8, 6);
+    g.fillStyle = '#242a2e'; g.fillRect(0, 1, 7, 5);
+    g.restore();
+
+    fillRR(g, 21, 40, 7, 15, 3, p.shirtDark);
+    g.save(); g.translate(24, 42); g.rotate(1.25); fillRR(g, 0, 0, 6, 17, 3, p.shirt); g.restore();
+    fillRR(g, 37, 40, 6, 14, 3, p.shirtDark);
+    g.save(); g.translate(40, 43); g.rotate(1.15); fillRR(g, 0, 0, 6, 12, 3, p.shirt); g.restore();
+    g.fillStyle = '#9fb0bc';
+    g.beginPath(); g.arc(25, 51, 3, 0, TAU); g.fill();
+    g.beginPath(); g.arc(41, 50, 3, 0, TAU); g.fill();
+    star(g, 57, 50.5, 8, 'rgba(210,235,255,.95)');
+    star(g, 57, 50.5, 4.5, 'rgba(255,255,255,1)');
+  } else {
+    g.save();
+    g.translate(14, 58);
+    g.rotate(-0.48);
+    g.fillStyle = '#1b1d1e'; g.fillRect(0, 0, 33, 5);
+    g.fillStyle = '#2d3336'; g.fillRect(6, -1.5, 16, 2.5);
+    g.fillStyle = '#0f1112'; g.fillRect(13, 4, 7, 7);
+    g.fillStyle = '#242a2e'; g.fillRect(0, 1, 7, 5);
+    g.restore();
+
+    fillRR(g, 21, 39, 7, 13, 3, p.shirtDark);
+    g.save(); g.translate(24, 41); g.rotate(1.1); fillRR(g, 0, 0, 6, 16, 3, p.shirt); g.restore();
+    fillRR(g, 37, 40, 6, 12, 3, p.shirtDark);
+    g.save(); g.translate(39, 43); g.rotate(0.4); fillRR(g, 0, 0, 6, 14, 3, p.shirt); g.restore();
+    g.fillStyle = '#9fb0bc';
+    g.beginPath(); g.arc(26, 53, 3, 0, TAU); g.fill();
+    g.beginPath(); g.arc(35, 54, 3, 0, TAU); g.fill();
+  }
+
+  // cabeza CT: Casco táctico y visor
+  fillRR(g, 24, 8, 17, 22, 6, p.helmet, 'rgba(0,0,0,.85)');
+  g.fillStyle = 'rgba(255,255,255,.1)';
+  g.fillRect(26, 10, 13, 2);
+  // visor reflectante azul
+  fillRR(g, 26, 17, 13, 7, 2, p.visor, 'rgba(0,0,0,.9)');
+  g.fillStyle = 'rgba(255,255,255,.45)';
+  g.fillRect(28, 18, 9, 2);
+  // barbilla / máscara
+  g.fillStyle = '#1a1f24'; g.fillRect(26, 25, 13, 5);
+  // cuello
+  g.fillStyle = '#12161a'; g.fillRect(29, 29, 7, 4);
+}
+
 function drawCorpse(g, variant) {
   const p = PALETTES[variant & 1];
   g.clearRect(0, 0, 96, 32);
@@ -623,6 +727,13 @@ const BOT_SPRITES = [0, 1].map(v => {
   const set = {};
   for (const pose of BOT_POSES) {
     set[pose] = buildSpriteLUT(spriteFromCanvas(64, 96, g => drawBot(g, pose, v)));
+  }
+  return set;
+});
+const CT_SPRITES = [0, 1].map(v => {
+  const set = {};
+  for (const pose of BOT_POSES) {
+    set[pose] = buildSpriteLUT(spriteFromCanvas(64, 96, g => drawCTBot(g, pose, v)));
   }
   return set;
 });

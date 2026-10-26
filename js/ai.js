@@ -154,6 +154,8 @@ function makeBot(x, y, index, carrier) {
   }
   return {
     x, y, index, carrier, weapon,
+    team: 't',
+    name: 'TERRORISTA_' + (index + 1),
     hp: 100, alive: true, variant: index % 2,
     aim: -Math.PI / 2 + rand(-0.5, 0.5),
     moveAim: -Math.PI / 2,
@@ -265,7 +267,8 @@ function updateBot(bot, dt) {
 
   const px = player.x, py = player.y;
   const d = dist2D(bot.x, bot.y, px, py);
-  const los = player.alive && d < 28 && losClear(bot.x, bot.y, px, py);
+  const isEnemy = !bot.team || bot.team !== player.team;
+  const los = isEnemy && player.alive && d < 28 && losClear(bot.x, bot.y, px, py);
   const toPlayer = Math.atan2(py - bot.y, px - bot.x);
   const inFront = Math.abs(angleDiff(toPlayer, bot.aim)) < 1.95;
   const sees = los && inFront && game.state === 'live';
@@ -493,6 +496,7 @@ function shootHitscan(yaw, pitch, def) {
   let bestBot = null, bestT = maxD, head = false, hitZ = 0;
   for (const b of bots) {
     if (!b.alive) continue;
+    if (b.team && b.team === player.team) continue;
     const rx = b.x - px, ry = b.y - py;
     const proj = rx * dx + ry * dy;
     if (proj <= 0) continue;
@@ -504,6 +508,26 @@ function shootHitscan(yaw, pitch, def) {
     const z = eye + tanP * t;
     if (z < 0 || z > BOT_H) continue;
     bestBot = b; bestT = t; hitZ = z; head = z > BOT_H * 0.70;
+  }
+
+  let hitRemote = null;
+  if (window.Multiplayer && Multiplayer.active) {
+    for (const rp of Multiplayer.getRemotePlayers()) {
+      if (!rp.alive || rp.team === player.team) continue;
+      const rx = rp.x - px, ry = rp.y - py;
+      const proj = rx * dx + ry * dy;
+      if (proj <= 0) continue;
+      const perp2 = rx * rx + ry * ry - proj * proj;
+      const rad = 0.30;
+      if (perp2 > rad * rad) continue;
+      const t = proj - Math.sqrt(rad * rad - perp2);
+      if (t <= 0 || t >= bestT) continue;
+      const z = eye + tanP * t;
+      if (z < 0 || z > BOT_H) continue;
+      bestT = t; hitZ = z; head = z > BOT_H * 0.70;
+      hitRemote = rp;
+      bestBot = null;
+    }
   }
 
   const endX = px + dx * bestT;
@@ -519,6 +543,11 @@ function shootHitscan(yaw, pitch, def) {
     const falloff = clamp(1 - Math.max(0, bestT - 9) / 55, 0.55, 1);
     let dmg = def.dmg * falloff * (head ? def.hs : 1);
     damageBot(bestBot, dmg, head, endX, endY, hitZ);
+  } else if (hitRemote) {
+    const falloff = clamp(1 - Math.max(0, bestT - 9) / 55, 0.55, 1);
+    let dmg = def.dmg * falloff * (head ? def.hs : 1);
+    Multiplayer.sendHit(hitRemote.id, dmg, head);
+    spawnBlood(endX, endY, hitZ, head);
   } else {
     spawnImpact(endX, endY, endZ, floorHit ? 0 : 1);
   }
@@ -546,7 +575,7 @@ function killBot(bot, head) {
   player.kills++;
   if (head) player.headshots++;
   const reward = head ? 400 : 300;
-  player.money += reward;
+  player.money = Math.min(MAX_MONEY, player.money + reward);
   addKillfeed(`<b>TÚ</b> ▸ TERRORISTA${head ? ' <span class="hs">HEADSHOT</span>' : ''} <em>+$${reward}</em>`);
   sfxKill(head);
 
@@ -568,6 +597,12 @@ function killBot(bot, head) {
 
 function updateBomb(dt) {
   if (game.state !== 'live') return;
+
+  const anyPlanting = bots.some(b => b.alive && b.planting);
+  if (!anyPlanting) {
+    const warn = document.querySelector('.plant-warning');
+    if (warn) warn.remove();
+  }
 
   if (bomb.state === 'carried') {
     if (bomb.carrier && bomb.carrier.alive) {
@@ -615,7 +650,7 @@ function updateBomb(dt) {
       if (bomb.defuseProgress >= 1) {
         bomb.state = 'defused';
         player.defusing = false;
-        player.money += 300;
+        player.money = Math.min(MAX_MONEY, player.money + 300);
         addKillfeed('<b>TÚ</b> desactivaste el C4 <em>+$300</em>');
         endRound(true, 'C4 desactivado a tiempo');
         return;

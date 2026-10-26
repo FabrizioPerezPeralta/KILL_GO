@@ -220,7 +220,8 @@ const Renderer = (() => {
       let pose = 'idle';
       if (bot.shootPose > 0) pose = 'shoot';
       else if (bot.moving) pose = (Math.floor(bot.walkPhase) % 2 === 0) ? 'walk1' : 'walk2';
-      const sprite = BOT_SPRITES[bot.variant][pose];
+      const spriteSet = (bot.team === 'ct' ? CT_SPRITES : BOT_SPRITES);
+      const sprite = spriteSet[bot.variant % 2][pose];
       let zOff = 0;
       if (bot.moving) zOff = Math.abs(Math.sin(bot.walkPhase * Math.PI)) * 0.012;
       addSprite(list, sprite, bot.x, bot.y, BOT_H, BOT_W, zOff);
@@ -238,6 +239,16 @@ const Renderer = (() => {
           } else bot._marker = null;
         } else bot._marker = null;
       } else bot._marker = null;
+    }
+    if (window.Multiplayer && Multiplayer.active) {
+      const remotes = Multiplayer.getRemotePlayers();
+      for (const rp of remotes) {
+        if (!rp.alive) continue;
+        const spriteSet = rp.team === 'ct' ? CT_SPRITES : BOT_SPRITES;
+        const pose = rp.pose || 'idle';
+        const sprite = spriteSet[(rp.id ? rp.id.charCodeAt(0) : 0) % 2][pose] || spriteSet[0].idle;
+        addSprite(list, sprite, rp.x, rp.y, BOT_H, BOT_W, 0);
+      }
     }
     for (const c of corpses) {
       addSprite(list, CORPSE_SPRITES[c.variant], c.x, c.y, CORPSE_H, CORPSE_W, 0);
@@ -335,6 +346,32 @@ const Renderer = (() => {
       ctx.closePath();
       ctx.fill();
       ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 1; ctx.stroke();
+    }
+
+    // nombres de jugadores en multijugador
+    if (window.Multiplayer && Multiplayer.active) {
+      const remotes = Multiplayer.getRemotePlayers();
+      ctx.save();
+      ctx.font = 'bold 11px "Segoe UI", Arial, sans-serif';
+      ctx.textAlign = 'center';
+      for (const rp of remotes) {
+        if (!rp.alive) continue;
+        const pr = project(rp.x, rp.y, BOT_H + 0.14, cam);
+        if (!pr) continue;
+        const zx = clamp(pr.x | 0, 0, W - 1);
+        if (zbuf[zx] < pr.depth * 0.96) continue;
+        const px = pr.x * scale, py = pr.y * scale;
+        const isTeammate = rp.team === player.team;
+        const col = isTeammate ? '#7fd1ff' : '#ff9a55';
+        ctx.fillStyle = 'rgba(8,10,8,.75)';
+        ctx.fillRect(px - 44, py - 14, 88, 16);
+        ctx.strokeStyle = isTeammate ? 'rgba(127,209,255,.5)' : 'rgba(255,154,85,.5)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(px - 44, py - 14, 88, 16);
+        ctx.fillStyle = col;
+        ctx.fillText(rp.name || 'JUGADOR', px, py - 2);
+      }
+      ctx.restore();
     }
   }
 

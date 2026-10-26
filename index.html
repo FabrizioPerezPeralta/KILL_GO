@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>DUST STRIKE — Counter-Strike en el navegador</title>
+<meta name="description" content="DUST STRIKE — Juego táctico de disparos 3D en primera persona inspirado en Counter-Strike en el navegador con motor de raycasting Canvas puro.">
+<meta name="keywords" content="counter-strike, csgo, raycasting, canvas, fps, html5 game, vanilla js">
+<meta name="author" content="Fabrizio Perez Peralta">
+<meta property="og:title" content="DUST STRIKE — Counter-Strike en el Navegador">
+<meta property="og:description" content="Motor de raycasting 3D en Canvas puro sin dependencias. Defiende el sitio A, compra armas y desactiva el C4.">
+<meta property="og:image" content="_shot_live.png">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230a0c0a'/><circle cx='16' cy='16' r='10' stroke='%23f2a33a' stroke-width='2' fill='none'/><line x1='16' y1='2' x2='16' y2='30' stroke='%23f2a33a' stroke-width='2'/><line x1='2' y1='16' x2='30' y2='16' stroke='%23f2a33a' stroke-width='2'/><circle cx='16' cy='16' r='3' fill='%23ff5346'/></svg>">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -62,12 +71,18 @@
       <div class="menu-left">
         <div class="eyebrow">OPERACIÓN · DESERT DAWN</div>
         <h1>DUST<span>STRIKE</span></h1>
-        <div class="tagline">Desactivación de bomba · tú contra los terroristas</div>
-        <div class="menu-actions">
-          <button id="playBtn" class="btn primary big">▶ DESPLEGAR</button>
+        <div class="user-strip">
+          <span class="lbl">OPERADOR:</span>
+          <b id="displayUsername">OPERADOR</b>
+          <button id="editUsernameBtn" class="btn-xs" title="Cambiar nombre de usuario">✎ CAMBIAR</button>
+        </div>
+        <div class="menu-actions mode-actions">
+          <button id="playSingleBtn" class="btn primary big">⚔️ MODO SOLITARIO (VS BOTS)</button>
+          <button id="openMpBtn" class="btn big mp-action-btn">🌐 MULTIJUGADOR (5 VS 5)</button>
+          <button id="playBtn" class="hidden"></button>
         </div>
         <div class="diff-row">
-          <span class="lbl">DIFICULTAD</span>
+          <span class="lbl">DIFICULTAD (SOLITARIO)</span>
           <div class="diff-btns">
             <button class="diff" data-diff="easy">RECLUTA</button>
             <button class="diff active" data-diff="normal">SOLDADO</button>
@@ -81,6 +96,7 @@
         <div class="menu-strip">
           <span>◈ 8 RONDAS PARA GANAR</span><span>◈ SITIO A</span><span>◈ C4 · 40s</span>
         </div>
+        <div id="touchNotice" class="touch-notice hidden">⚠️ Nota: Este juego requiere teclado y ratón para capturar el puntero (Pointer Lock).</div>
       </div>
       <div class="menu-right">
         <div class="panel-title">BRIEFING</div>
@@ -90,14 +106,14 @@
           <div><b>RATÓN</b><span>Apuntar</span></div>
           <div><b>CLIC IZQ</b><span>Disparar</span></div>
           <div><b>CLIC DER</b><span>Mira AWP</span></div>
+          <div><b>RUEDA / 1 2 3</b><span>Cambiar arma</span></div>
+          <div><b>R</b><span>Recargar</span></div>
           <div><b>SHIFT</b><span>Andar sigiloso</span></div>
           <div><b>CTRL</b><span>Agacharse</span></div>
           <div><b>ESPACIO</b><span>Saltar</span></div>
-          <div><b>R</b><span>Recargar</span></div>
-          <div><b>1 2 3</b><span>Cambiar arma</span></div>
           <div><b>E</b><span>Desactivar C4</span></div>
           <div><b>TAB</b><span>Marcador</span></div>
-          <div><b>M</b><span>Silenciar</span></div>
+          <div><b>ESC / M</b><span>Pausa / Mute</span></div>
         </div>
         <div class="tip">CONSEJO: apunta a la cabeza. Un AWP bien colocado acaba con cualquier terrorista de un solo tiro.</div>
       </div>
@@ -181,15 +197,130 @@
     </div>
   </div>
 
+  <div id="userModal" class="screen hidden">
+    <div class="modal">
+      <div class="eyebrow">REGISTRO OBLIGATORIO DE OPERADOR</div>
+      <h2>IDENTIFICACIÓN</h2>
+      <p class="modal-sub">Ingresa tu nombre de usuario para combatir en el sitio A y salas multijugador.</p>
+      <div class="user-input-box">
+        <input type="text" id="usernameInput" maxlength="14" placeholder="EJ. GHOST_99" autofocus>
+      </div>
+      <div id="usernameError" class="modal-err hidden">El nombre debe tener entre 2 y 14 caracteres.</div>
+      <div class="modal-actions">
+        <button id="saveUsernameBtn" class="btn primary big">CONFIRMAR IDENTIDAD ▶</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="mpLobby" class="screen hidden">
+    <div class="lobby-wrap">
+      <div class="lobby-head">
+        <div>
+          <div class="eyebrow">OPERACIÓN EN RED · SALAS 5 VS 5</div>
+          <h2>LOBBY MULTIJUGADOR</h2>
+          <div class="tagline">Tú contra otros jugadores en tiempo real · Máximo 10 operadores por sala</div>
+        </div>
+        <div class="lobby-user-tag">
+          <span>OPERADOR:</span> <b id="lobbyUsername">OPERADOR</b>
+        </div>
+      </div>
+
+      <!-- Sección de unirse o crear sala -->
+      <div id="lobbyJoinSection" class="lobby-section">
+        <div class="lobby-cards">
+          <div class="lobby-card">
+            <h3>CREAR NUEVA SALA</h3>
+            <p>Genera una sala privada 5 vs 5 con un enlace único para que tus compañeros se unan directamente.</p>
+            <button id="createRoomBtn" class="btn primary big">CREAR SALA ▶</button>
+          </div>
+          <div class="lobby-card">
+            <h3>UNIRSE A SALA EXISTENTE</h3>
+            <p>Ingresa el código de sala o únete mediante el enlace que te compartieron.</p>
+            <div class="code-input-row">
+              <input type="text" id="joinRoomCodeInput" placeholder="EJ: DUST-A7X2" maxlength="12">
+              <button id="joinRoomBtn" class="btn primary">UNIRSE ▶</button>
+            </div>
+          </div>
+        </div>
+        <div class="lobby-foot-actions">
+          <button id="backToMenuFromLobbyBtn" class="btn">◀ VOLVER AL MENÚ</button>
+        </div>
+      </div>
+
+      <!-- Sección de sala activa con selección de equipos 5 vs 5 -->
+      <div id="lobbyRoomSection" class="lobby-section hidden">
+        <div class="room-share-bar">
+          <div class="room-code-tag">
+            <span class="lbl">CÓDIGO DE SALA:</span>
+            <span id="displayRoomCode" class="room-code">DUST-XXXX</span>
+          </div>
+          <div class="room-link-box">
+            <input type="text" id="roomLinkInput" readonly>
+            <button id="copyRoomLinkBtn" class="btn">📋 COPIAR ENLACE</button>
+          </div>
+        </div>
+
+        <div class="team-selection-grid">
+          <!-- Equipo Antiterrorista (CT) -->
+          <div class="team-card ct-card">
+            <div class="tc-head">
+              <div>
+                <span class="tc-badge ct">POLICÍAS</span>
+                <h4>ANTITERRORISTAS</h4>
+              </div>
+              <span id="ctCount" class="tc-count">0 / 5</span>
+            </div>
+            <p class="tc-goal">Misión: Defender el Sitio A y desactivar el C4.</p>
+            <div id="ctList" class="roster-list"></div>
+            <button id="joinCtBtn" class="btn team-btn ct-btn">ELEGIR POLICÍA (CT)</button>
+          </div>
+
+          <!-- VS Central -->
+          <div class="team-vs-divider">
+            <span>VS</span>
+            <small>5 VS 5</small>
+          </div>
+
+          <!-- Equipo Terrorista (T) -->
+          <div class="team-card t-card">
+            <div class="tc-head">
+              <div>
+                <span class="tc-badge t">TERRORISTAS</span>
+                <h4>FUERZAS T</h4>
+              </div>
+              <span id="tCount" class="tc-count">0 / 5</span>
+            </div>
+            <p class="tc-goal">Misión: Asaltar el Sitio A y detonar el C4.</p>
+            <div id="tList" class="roster-list"></div>
+            <button id="joinTBtn" class="btn team-btn t-btn">ELEGIR TERRORISTA (T)</button>
+          </div>
+        </div>
+
+        <div class="room-actions-bar">
+          <div id="hostControls" class="host-controls hidden">
+            <label class="bot-toggle-label">
+              <input type="checkbox" id="fillBotsCheck" checked>
+              <span>Rellenar huecos con Bots tácticos (hasta 5 vs 5)</span>
+            </label>
+            <button id="startMpMatchBtn" class="btn primary big">▶ COMENZAR PARTIDA</button>
+          </div>
+          <button id="leaveRoomBtn" class="btn">SALIR DE LA SALA</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="lockHint" class="hidden">
     <div class="lh-box">CLIC PARA JUGAR<span>Se capturará el ratón para apuntar</span></div>
   </div>
 </div>
 
+<script src="js/peerjs.min.js"></script>
 <script src="js/textures.js"></script>
 <script src="js/render.js"></script>
 <script src="js/game.js"></script>
 <script src="js/ai.js"></script>
+<script src="js/multiplayer.js"></script>
 <script src="js/ui.js"></script>
 </body>
 </html>
