@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DUST STRIKE — Counter-Strike en el navegador</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="game">
+  <canvas id="view"></canvas>
+  <div id="dmgFlash"></div>
+  <div id="lowhp"></div>
+  <div id="vignette"></div>
+
+  <div id="hud" class="hidden">
+    <div id="topbar">
+      <div class="team ct"><span class="tlabel">CT</span><span id="scoreCT">0</span></div>
+      <div id="timer">1:45</div>
+      <div class="team t"><span id="scoreT">0</span><span class="tlabel">T</span></div>
+    </div>
+    <div id="bombStatus" class="hidden">C4 ARMADO <span id="bombTimer">40</span></div>
+
+    <div id="radarWrap">
+      <canvas id="radar" width="336" height="336"></canvas>
+      <div id="roundLabel">RONDA 1</div>
+      <div id="money">$800</div>
+    </div>
+
+    <div id="killfeed"></div>
+
+    <div id="vitals">
+      <div class="vital">
+        <div class="vital-ico">✚</div>
+        <div><div class="vital-num" id="hp">100</div><div class="vital-lbl">SALUD</div></div>
+      </div>
+      <div class="vital armor">
+        <div class="vital-ico">⛨</div>
+        <div><div class="vital-num" id="armor">0</div><div class="vital-lbl">CHALECO</div></div>
+      </div>
+    </div>
+
+    <div id="ammoBox">
+      <div id="wname">USP-S</div>
+      <div id="ammo"><span id="mag">12</span><span id="reserve">/ 36</span></div>
+      <div id="ammoHint">1 · 2 · 3 armas &nbsp;|&nbsp; R recargar</div>
+    </div>
+
+    <div id="prompt"></div>
+    <div id="centerBanner"><div id="bannerBig"></div><div id="bannerSub"></div></div>
+    <div id="defuseWrap" class="hidden">
+      <div id="defuseLabel">DESACTIVANDO C4 <span id="defusePct">0%</span></div>
+      <div id="defuseTrack"><div id="defuseFill"></div></div>
+    </div>
+    <div id="hitmarker"><i></i><i></i></div>
+    <div id="dmgDir"></div>
+    <div id="scoreHint">TAB · MARCADOR</div>
+  </div>
+
+  <div id="menu" class="screen">
+    <div class="menu-wrap">
+      <div class="menu-left">
+        <div class="eyebrow">OPERACIÓN · DESERT DAWN</div>
+        <h1>DUST<span>STRIKE</span></h1>
+        <div class="tagline">Desactivación de bomba · tú contra los terroristas</div>
+        <div class="menu-actions">
+          <button id="playBtn" class="btn primary big">▶ DESPLEGAR</button>
+        </div>
+        <div class="diff-row">
+          <span class="lbl">DIFICULTAD</span>
+          <div class="diff-btns">
+            <button class="diff" data-diff="easy">RECLUTA</button>
+            <button class="diff active" data-diff="normal">SOLDADO</button>
+            <button class="diff" data-diff="hard">VETERANO</button>
+          </div>
+        </div>
+        <div class="sens-row">
+          <label>SENSIBILIDAD DEL RATÓN <span id="sensVal">2.2</span></label>
+          <input type="range" id="sens" min="0.6" max="6" step="0.1" value="2.2">
+        </div>
+        <div class="menu-strip">
+          <span>◈ 8 RONDAS PARA GANAR</span><span>◈ SITIO A</span><span>◈ C4 · 40s</span>
+        </div>
+      </div>
+      <div class="menu-right">
+        <div class="panel-title">BRIEFING</div>
+        <p class="brief">Eres el único operador CT que queda en el sitio A. Los terroristas avanzan para plantar el C4: elimínalos o desactívalo antes de que explote. Gana <b>8 rondas</b> para completar la operación.</p>
+        <div class="controls-grid">
+          <div><b>W A S D</b><span>Mover</span></div>
+          <div><b>RATÓN</b><span>Apuntar</span></div>
+          <div><b>CLIC IZQ</b><span>Disparar</span></div>
+          <div><b>CLIC DER</b><span>Mira AWP</span></div>
+          <div><b>SHIFT</b><span>Andar sigiloso</span></div>
+          <div><b>CTRL</b><span>Agacharse</span></div>
+          <div><b>ESPACIO</b><span>Saltar</span></div>
+          <div><b>R</b><span>Recargar</span></div>
+          <div><b>1 2 3</b><span>Cambiar arma</span></div>
+          <div><b>E</b><span>Desactivar C4</span></div>
+          <div><b>TAB</b><span>Marcador</span></div>
+          <div><b>M</b><span>Silenciar</span></div>
+        </div>
+        <div class="tip">CONSEJO: apunta a la cabeza. Un AWP bien colocado acaba con cualquier terrorista de un solo tiro.</div>
+      </div>
+    </div>
+    <div class="menu-foot"><span>DUST STRIKE · motor de raycasting en Canvas · sin dependencias</span><span>v1.0</span></div>
+  </div>
+
+  <div id="buy" class="screen hidden">
+    <div class="buy-wrap">
+      <div class="buy-top">
+        <div><div class="eyebrow">FASE DE COMPRA</div><h2>ARMERÍA</h2></div>
+        <div class="buy-money"><span id="buyMoney">$800</span><small>DISPONIBLE</small></div>
+        <div class="buy-clock"><span id="buyClock">20</span><small>SEGUNDOS</small></div>
+      </div>
+      <div id="shopGrid" class="shop-grid"></div>
+      <div class="buy-bottom">
+        <div class="buy-help"><b>1–6</b> comprar &nbsp;·&nbsp; <b>ENTER</b> comenzar &nbsp;·&nbsp; Los objetos comprados se conservan entre rondas</div>
+        <button id="readyBtn" class="btn primary">TODO LISTO ▶</button>
+      </div>
+      <div id="buyToast"></div>
+    </div>
+  </div>
+
+  <div id="pause" class="screen hidden">
+    <div class="modal">
+      <div class="eyebrow">PARTIDA EN PAUSA</div>
+      <h2>PAUSA TÁCTICA</h2>
+      <p class="modal-sub">Tómate un respiro. La acción se reanuda al instante.</p>
+      <div class="modal-actions">
+        <button id="resumeBtn" class="btn primary">CONTINUAR ▶</button>
+        <button id="quitBtn" class="btn">SALIR AL MENÚ</button>
+      </div>
+      <div class="sens-row compact">
+        <label>SENSIBILIDAD <span id="sensVal2">2.2</span></label>
+        <input type="range" id="sens2" min="0.6" max="6" step="0.1" value="2.2">
+      </div>
+    </div>
+  </div>
+
+  <div id="roundOver" class="screen hidden">
+    <div class="modal">
+      <div id="roKicker" class="eyebrow">RONDA FINALIZADA</div>
+      <h2 id="roTitle">RONDA GANADA</h2>
+      <p id="roReason" class="modal-sub"></p>
+      <div class="ro-stats">
+        <div><span id="roScore">CT 1 — 0 T</span><small>MARCADOR</small></div>
+        <div><span id="roReward">+$3000</span><small>RECOMPENSA</small></div>
+      </div>
+      <div class="modal-actions"><button id="roBtn" class="btn primary">SIGUIENTE RONDA ▶</button></div>
+      <div id="roAuto" class="auto-note"></div>
+    </div>
+  </div>
+
+  <div id="gameOver" class="screen hidden">
+    <div class="modal wide">
+      <div id="goKicker" class="eyebrow">OPERACIÓN COMPLETADA</div>
+      <h2 id="goTitle">VICTORIA</h2>
+      <p id="goSub" class="modal-sub"></p>
+      <div class="go-grid">
+        <div><span id="goScore">8 — 3</span><small>RESULTADO</small></div>
+        <div><span id="goKills">0</span><small>BAJAS</small></div>
+        <div><span id="goHS">0</span><small>HEADSHOTS</small></div>
+        <div><span id="goAcc">0%</span><small>PRECISIÓN</small></div>
+      </div>
+      <div class="modal-actions">
+        <button id="goRestart" class="btn primary">JUGAR OTRA VEZ ▶</button>
+        <button id="goMenu" class="btn">MENÚ PRINCIPAL</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="scoreboard" class="hidden">
+    <div class="board">
+      <div class="board-head"><span>OPERACIÓN DUST</span><span id="boardScore">CT 0 — 0 T</span></div>
+      <div class="board-body">
+        <div class="board-row board-title"><span>OPERADOR</span><span>BAJAS</span><span>MUERTES</span><span>HS</span></div>
+        <div class="board-row ct-row"><span>TÚ · CT</span><span id="bKills">0</span><span id="bDeaths">0</span><span id="bHs">0</span></div>
+        <div class="board-row t-row"><span>TERRORISTAS EN PIE</span><span id="bAlive">0</span><span>—</span><span>—</span></div>
+      </div>
+      <div class="board-foot">TAB para cerrar · Ronda <span id="bRound">1</span></div>
+    </div>
+  </div>
+
+  <div id="lockHint" class="hidden">
+    <div class="lh-box">CLIC PARA JUGAR<span>Se capturará el ratón para apuntar</span></div>
+  </div>
+</div>
+
+<script src="js/textures.js"></script>
+<script src="js/render.js"></script>
+<script src="js/game.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/ui.js"></script>
+</body>
+</html>
