@@ -1036,6 +1036,9 @@ function setSensitivity(v) {
   $('sens2').value = game.sens;
   $('sensVal').textContent = game.sens.toFixed(1);
   $('sensVal2').textContent = game.sens.toFixed(1);
+  if (typeof Engine !== 'undefined' && Engine.input) {
+    Engine.input.setSensitivity(game.sens);
+  }
 }
 
 function setVolume(v) {
@@ -1242,6 +1245,41 @@ function initUI() {
     showScoreboard(false);
   });
 
+  if (typeof Engine !== 'undefined') {
+    Engine.input.init(ui.canvas);
+    Engine.input.setSensitivity(game.sens);
+
+    Engine.fsm.register('menu', {
+      enter() { game.state = 'menu'; },
+      update(dt) { updateAttract(); }
+    });
+    Engine.fsm.register('buy', {
+      enter() { game.state = 'buy'; },
+      update(dt) { updateBuy(dt); }
+    });
+    Engine.fsm.register('live', {
+      enter() { game.state = 'live'; },
+      update(dt) { if (locked) updateLive(dt); }
+    });
+    Engine.fsm.register('roundover', {
+      enter() { game.state = 'roundover'; },
+      update(dt) { updateRoundOver(dt); }
+    });
+    Engine.fsm.register('paused', {
+      enter() { game.state = 'paused'; },
+      update(dt) {}
+    });
+
+    Engine.events.on('combat:damage', () => updateHUD());
+    Engine.events.on('combat:kill', () => updateHUD());
+    Engine.events.on('player:damage', () => updateHUD());
+    Engine.events.on('weapon:fire', () => updateHUD());
+    Engine.events.on('weapon:reload', () => updateHUD());
+    Engine.events.on('weapon:switch', () => updateHUD());
+    Engine.events.on('round:start', () => updateHUD());
+    Engine.events.on('round:end', () => updateHUD());
+  }
+
   initUsername();
 }
 
@@ -1324,7 +1362,7 @@ function initUsername() {
 }
 
 /* ---------------------------------------------------------------------
-   BUCLE PRINCIPAL
+   BUCLE PRINCIPAL (Motor por capas + FSM + ECS)
    --------------------------------------------------------------------- */
 let lastFrame = performance.now();
 function loop(now) {
@@ -1339,14 +1377,19 @@ function loop(now) {
     Multiplayer.tick(now, dt);
   }
 
-  if (game.state === 'menu') {
-    updateAttract();
-  } else if (game.state === 'buy') {
-    updateBuy(dt);
-  } else if (game.state === 'live') {
-    if (locked) updateLive(dt);
-  } else if (game.state === 'roundover') {
-    updateRoundOver(dt);
+  if (typeof Engine !== 'undefined' && Engine.fsm) {
+    Engine.fsm.update(dt);
+    Engine.ecs.updateSystems(dt);
+  } else {
+    if (game.state === 'menu') {
+      updateAttract();
+    } else if (game.state === 'buy') {
+      updateBuy(dt);
+    } else if (game.state === 'live') {
+      if (locked) updateLive(dt);
+    } else if (game.state === 'roundover') {
+      updateRoundOver(dt);
+    }
   }
 
   Renderer.render();
@@ -1361,6 +1404,7 @@ requestAnimationFrame(loop);
 window.DUST = {
   game, player, bomb,
   get bots() { return bots; },
+  Engine: typeof Engine !== 'undefined' ? Engine : null,
   startMatch, nextRound, beginLive, endRound, advanceRound,
   buyItem, damageBot, damagePlayer, spawnBotsForRound,
   setSensitivity, setVolume, tryLockPointer, quitToMenu

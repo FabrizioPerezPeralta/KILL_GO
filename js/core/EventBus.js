@@ -1,0 +1,57 @@
+'use strict';
+/* =====================================================================
+   DUST STRIKE — js/core/EventBus.js
+   Capa 2: Motor Central — Bus de eventos Pub/Sub desacoplado
+   ===================================================================== */
+
+class EventBusClass {
+  constructor() {
+    this.listeners = new Map();
+  }
+
+  on(event, handler) {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, new Set());
+    }
+    this.listeners.get(event).add(handler);
+    return () => this.off(event, handler);
+  }
+
+  once(event, handler) {
+    const wrapper = (payload) => {
+      this.off(event, wrapper);
+      handler(payload);
+    };
+    return this.on(event, wrapper);
+  }
+
+  off(event, handler) {
+    const set = this.listeners.get(event);
+    if (set) {
+      set.delete(handler);
+      if (set.size === 0) this.listeners.delete(event);
+    }
+  }
+
+  emit(event, payload) {
+    const set = this.listeners.get(event);
+    if (!set) return;
+    for (const handler of set) {
+      try {
+        handler(payload);
+      } catch (err) {
+        console.error(`[EventBus] Error en evento "${event}":`, err);
+      }
+    }
+  }
+
+  clear() {
+    this.listeners.clear();
+  }
+}
+
+const EventBus = new EventBusClass();
+
+if (typeof window !== 'undefined') window.EventBus = EventBus;
+if (typeof globalThis !== 'undefined') globalThis.EventBus = EventBus;
+

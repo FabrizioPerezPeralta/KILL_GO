@@ -95,22 +95,37 @@
 CSGOEPIS/
 ├── .github/
 │   └── workflows/
-│       └── deploy.yml      # Automatización de despliegue en GitHub Pages y validación de sintaxis
+│       └── deploy.yml          # Automatización de CI/CD para GitHub Pages con chequeo sintáctico
 ├── js/
-│   ├── textures.js         # Generación procedural de texturas, sprites LUT y mapa
-│   ├── render.js           # Motor de raycasting 3D, buffer de píxeles y vista 2D
-│   ├── game.js             # Lógica del jugador, armas, economía y audio WebAudio
-│   ├── ai.js               # Algoritmo A*, comportamiento de bots, combate y C4
-│   ├── ui.js               # HUD, radar, menú de compra, controles e interfaz
-│   ├── multiplayer.js      # Lógica de red P2P WebRTC, sincronización de salas 5v5
-│   └── peerjs.min.js       # Librería cliente WebRTC PeerJS
-├── index.html              # Estructura del lienzo Canvas y pantallas HTML
-├── style.css               # Estilos visuales oscuros, HUD táctico y diseño responsivo
-├── .nojekyll               # Desactiva Jekyll en GitHub Pages (preserva imágenes con _)
-├── .gitignore              # Exclusiones de archivos del sistema y temporales
-├── _shot_live.png          # Captura de pantalla del gameplay
-├── _shot_menu.png          # Captura de pantalla del menú
-└── README.md               # Documentación completa del proyecto
+│   ├── core/                   # Capa 2 & 4: Motor Central y Máquina de Estados
+│   │   ├── EventBus.js         # Bus de eventos Pub/Sub desacoplado
+│   │   ├── GameLoop.js         # Bucle determinista a 60 Hz con interpolación α
+│   │   ├── GameStateManager.js # FSM para estados de juego (menu, buy, live, roundover, paused)
+│   │   └── Engine.js           # Agregador central del motor (window.Engine)
+│   ├── hal/                    # Capa 1: Hardware Abstraction Layer (HAL)
+│   │   ├── InputManager.js     # Mapeo semántico de acciones, PointerLock y sensibilidad
+│   │   └── AudioManager.js     # Gestión de Web Audio API, buses Master/SFX y volumen
+│   ├── ecs/                    # Capa 3: Entity-Component-System (ECS)
+│   │   ├── EntityManager.js    # Creación, ciclo de vida, etiquetas y consultas de entidades
+│   │   └── Components.js       # Componentes de datos (Transform, Velocity, Health, etc.)
+│   ├── render/                 # Capa de Renderizado
+│   │   ├── Textures.js         # Generación procedural de texturas, mapas y sprites LUT
+│   │   └── Renderer.js         # Raycasting 3D, viewmodels con manos y armas, iluminación
+│   ├── game/                   # Simulación y Reglas del Juego
+│   │   ├── Game.js             # Estado de partida, jugador, armas, economía y sonido
+│   │   └── AI.js               # Algoritmo A*, comportamiento táctico de bots, combate y C4
+│   ├── network/                # Capa de Red y Multijugador
+│   │   ├── peerjs.min.js       # Cliente WebRTC PeerJS
+│   │   └── Multiplayer.js      # Sincronización P2P, salas 5v5 y estados remotos
+│   └── ui/                     # Interfaz de Usuario y Presentación
+│       └── UI.js               # HUD reactivo, radar, tienda, chat y listeners
+├── index.html                  # Estructura del juego y carga modular de capas
+├── style.css                   # Estilos visuales oscuros, HUD táctico y diseño responsivo
+├── .nojekyll                   # Preserva assets en GitHub Pages
+├── .gitignore                  # Exclusiones de Git
+├── _shot_live.png              # Captura del juego
+├── _shot_menu.png              # Captura del menú
+└── README.md                   # Documentación completa del proyecto
 ```
 
 ---

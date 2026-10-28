@@ -108,6 +108,17 @@ const player = {
   name: 'OPERADOR'
 };
 
+/* Registro canónico del jugador en la arquitectura ECS de Engine */
+if (typeof Engine !== 'undefined' && Engine.ecs) {
+  const pEid = Engine.ecs.createEntity('player');
+  player._entityId = pEid;
+  Engine.ecs.addComponent(pEid, 'Transform', player);
+  Engine.ecs.addComponent(pEid, 'Velocity', player);
+  Engine.ecs.addComponent(pEid, 'Health', player);
+  Engine.ecs.addComponent(pEid, 'Inventory', player);
+  Engine.ecs.addComponent(pEid, 'Viewmodel', player);
+}
+
 let bots = [];
 let corpses = [];
 let particles = [];
@@ -164,6 +175,9 @@ function selectSlot(n) {
   player.drawTimer = 0.42;
   player.fireCd = Math.max(player.fireCd, 0.22);
   sfxSwitch();
+  if (typeof Engine !== 'undefined' && Engine.events) {
+    Engine.events.emit('weapon:switch', { slot: n, gun: player.slots[n] });
+  }
 }
 
 function getEyeHeight() {
@@ -402,6 +416,9 @@ function sfxRadioBeep() {
 
 function radioAnnounce(phrase) {
   sfxRadioBeep();
+  if (typeof Engine !== 'undefined' && Engine.events) {
+    Engine.events.emit('radio:message', { phrase });
+  }
   if ('speechSynthesis' in window && !game.muted) {
     try {
       window.speechSynthesis.cancel();
@@ -420,11 +437,17 @@ function setMasterVolume(v) {
   if (master) {
     master.gain.value = game.muted ? 0 : game.volume;
   }
+  if (typeof Engine !== 'undefined' && Engine.audio) {
+    Engine.audio.setVolume(game.volume);
+  }
 }
 
 function toggleMute() {
   game.muted = !game.muted;
   if (master) master.gain.value = game.muted ? 0 : (game.volume !== undefined ? game.volume : 0.5);
+  if (typeof Engine !== 'undefined' && Engine.audio) {
+    Engine.audio.setMuted(game.muted);
+  }
   banner(game.muted ? 'SONIDO SILENCIADO' : 'SONIDO ACTIVADO', 'Pulsa M para cambiar', '', 1.4);
 }
 
@@ -453,6 +476,9 @@ function dropCurrentWeapon() {
   });
 
   player.slots[1] = null;
+  if (typeof Engine !== 'undefined' && Engine.events) {
+    Engine.events.emit('weapon:drop', { id: gun.id, x: finalX, y: finalY, mag: gun.mag, reserve: gun.reserve });
+  }
   selectSlot(player.slots[2] ? 2 : 3);
   sfxSwitch();
   toast('ARMA SOLTADA: ' + def.name);
@@ -474,6 +500,9 @@ function startReload() {
   player.reloadTotal = def.reload;
   player.scope = false;
   sfxReload();
+  if (typeof Engine !== 'undefined' && Engine.events) {
+    Engine.events.emit('weapon:reload', { gun, def });
+  }
 }
 function tryShoot() {
   if (game.state !== 'live' || !player.alive) return;
@@ -519,6 +548,9 @@ function tryShoot() {
   player.viewKick = Math.min(1.5, player.viewKick + (def.id === 'awp' ? 1.2 : 0.55));
   Renderer.addShake(def.id === 'awp' ? 4 : 1.1);
   sfxShot(def.sound, 0, 1);
+  if (typeof Engine !== 'undefined' && Engine.events) {
+    Engine.events.emit('weapon:fire', { gun, def, player });
+  }
 
   let spread = def.spread + def.moveSpread * clamp(Math.hypot(player.vx, player.vy) / 3.2, 0, 1);
   if (!player.onGround) spread += 0.05;
@@ -589,6 +621,10 @@ function nextRound() {
   ui.hud.classList.remove('hidden');
 
   game.state = 'buy';
+  if (typeof Engine !== 'undefined') {
+    Engine.fsm.transitionTo('buy');
+    Engine.events.emit('round:start', { round: game.round, ctScore: game.ctScore, tScore: game.tScore });
+  }
   game.buyTimer = BUY_TIME;
   game.buyExpired = false;
   game.roundTime = ROUND_TIME;
@@ -644,6 +680,10 @@ function nextRound() {
 function beginLive() {
   if (game.state !== 'buy') return;
   game.state = 'live';
+  if (typeof Engine !== 'undefined') {
+    Engine.fsm.transitionTo('live');
+    Engine.events.emit('round:live', { round: game.round });
+  }
   game.buyExpired = true;
   ui.buy.classList.add('hidden');
   ui.hud.classList.remove('hidden');
@@ -658,6 +698,10 @@ function endRound(ctWin, reason) {
   if (game.state !== 'live') return;
   game.state = 'roundover';
   game.lastResult = { ctWin, reason };
+  if (typeof Engine !== 'undefined') {
+    Engine.fsm.transitionTo('roundover', { ctWin, reason });
+    Engine.events.emit('round:end', { ctWin, reason });
+  }
   if (ctWin) game.ctScore++; else game.tScore++;
   const playerWon = (player.team === 'ct' && ctWin) || (player.team === 't' && !ctWin);
   const reward = playerWon ? 3000 : 1900;

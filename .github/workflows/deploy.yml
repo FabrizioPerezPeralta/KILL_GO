@@ -32,7 +32,7 @@ jobs:
 
       - name: Validate JavaScript Syntax
         run: |
-          for f in js/*.js; do
+          find js -type f -name "*.js" | while read -r f; do
             node --check "$f"
           done
 

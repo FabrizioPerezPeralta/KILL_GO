@@ -184,6 +184,19 @@ function spawnBotsForRound() {
   const carrierIdx = randi(0, count - 1);
   bots = spawns.map((sp, i) => makeBot(sp.x, sp.y, i, i === carrierIdx));
   bots[carrierIdx].carrier = true;
+
+  if (typeof Engine !== 'undefined' && Engine.ecs) {
+    const prevBots = Engine.ecs.getByTag('bot');
+    for (const id of prevBots) Engine.ecs.destroyEntity(id);
+    for (const b of bots) {
+      const eid = Engine.ecs.createEntity('bot');
+      b._entityId = eid;
+      Engine.ecs.addComponent(eid, 'Transform', b);
+      Engine.ecs.addComponent(eid, 'Velocity', b);
+      Engine.ecs.addComponent(eid, 'Health', b);
+      Engine.ecs.addComponent(eid, 'AIController', b);
+    }
+  }
 }
 
 function resetBomb() {
@@ -549,6 +562,9 @@ function damagePlayer(amount, source) {
   game.damageDirTimer = 1.1;
   Renderer.addShake(3);
   sfxHurt();
+  if (typeof Engine !== 'undefined' && Engine.events) {
+    Engine.events.emit('player:damage', { hp: player.hp, armor: player.armor, dmg, source });
+  }
   if (player.hp <= 0) killPlayer();
 }
 
@@ -562,6 +578,9 @@ function killPlayer() {
   player.defusing = false;
   game.deathTimer = 2.3;
   mouseDown = false;
+  if (typeof Engine !== 'undefined' && Engine.events) {
+    Engine.events.emit('player:kill', { player });
+  }
   if (player.slots[1] && typeof droppedWeapons !== 'undefined') {
     droppedWeapons.push({
       id: player.slots[1].id,
@@ -681,6 +700,9 @@ function damageBot(bot, dmg, head, hx, hy, hz) {
   spawnBlood(hx, hy, hz, head);
   showHitmarker(head);
   sfxHit(head);
+  if (typeof Engine !== 'undefined' && Engine.events) {
+    Engine.events.emit('combat:damage', { target: bot, dmg, head, hx, hy, hz });
+  }
   if (bot.hp <= 0) killBot(bot, head);
 }
 
@@ -699,6 +721,9 @@ function killBot(bot, head) {
   const victimName = bot.name || (bot.team === 'ct' ? 'POLICÍA' : 'TERRORISTA');
   addKillfeed(`<b>TÚ</b> ▸ ${victimName}${head ? ' <span class="hs">HEADSHOT</span>' : ''} <em>+$${reward}</em>`);
   sfxKill(head);
+  if (typeof Engine !== 'undefined' && Engine.events) {
+    Engine.events.emit('combat:kill', { killer: player, victim: bot, head, reward });
+  }
 
   if (bot.weapon && WEAPONS[bot.weapon] && typeof droppedWeapons !== 'undefined') {
     droppedWeapons.push({
@@ -841,6 +866,9 @@ function updateBomb(dt) {
         player.defusing = false;
         player.money = Math.min(MAX_MONEY, player.money + 300);
         addKillfeed('<b>TÚ</b> desactivaste el C4 <em>+$300</em>');
+        if (typeof Engine !== 'undefined' && Engine.events) {
+          Engine.events.emit('bomb:defused', { player });
+        }
         endRound(true, 'C4 desactivado a tiempo');
         return;
       }
@@ -878,6 +906,9 @@ function plantBomb(source) {
   banner('BOMBA PLANTADA', 'Sitio A · ' + (player.team === 'ct' ? 'Desactívala o explotará' : 'Defiéndela de la policía'), 'warn', 2.6);
   addKillfeed(`💣 <b>C4 ARMADO</b> por ${planterName}`);
   sfxPlant();
+  if (typeof Engine !== 'undefined' && Engine.events) {
+    Engine.events.emit('bomb:planted', { x: bomb.x, y: bomb.y, source });
+  }
   if (typeof radioAnnounce === 'function') {
     radioAnnounce('The bomb has been planted');
   }
@@ -903,6 +934,9 @@ function explodeBomb() {
   game.damageFlash = 1.5;
   Renderer.addShake(15);
   sfxBoom();
+  if (typeof Engine !== 'undefined' && Engine.events) {
+    Engine.events.emit('bomb:exploded', { x: bomb.x, y: bomb.y });
+  }
   for (let i = 0; i < 60; i++) {
     particles.push({
       x: bomb.x + rand(-1, 1), y: bomb.y + rand(-1, 1), z: rand(0, 1.2),

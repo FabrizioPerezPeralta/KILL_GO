@@ -30,11 +30,11 @@ const Renderer = (() => {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const ratio = viewW / viewH;
-    H = 300;
+    H = 380;
     W = Math.round(H * ratio);
-    if (W > 580) { W = 580; H = Math.round(W / ratio); }
-    if (H > 380) { H = 380; W = Math.round(H * ratio); }
-    W = Math.max(300, W); H = Math.max(180, H);
+    if (W > 740) { W = 740; H = Math.round(W / ratio); }
+    if (H > 420) { H = 420; W = Math.round(H * ratio); }
+    W = Math.max(320, W); H = Math.max(200, H);
 
     bufferCanvas.width = W; bufferCanvas.height = H;
     imageData = bctx.createImageData(W, H);
@@ -114,7 +114,9 @@ const Renderer = (() => {
       const stepY = rowDist * (rdy1 - rdy0) / W;
       let fx = px + rowDist * rdx0;
       let fy = py + rowDist * rdy0;
-      const lvl = clamp(Math.floor(SHADES - 1 - rowDist * 1.32) + 1, 0, SHADES - 1);
+      // Iluminación dinámica del suelo: atenuación a distancia + fog + flash de disparo
+      const flashFloor = (player.flashTimer > 0) ? Math.round((player.flashTimer / 0.055) * 4 * Math.max(0, 1 - rowDist / 5.5)) : 0;
+      const lvl = clamp(Math.floor(SHADES - 1 - rowDist * 1.28) + 1 + flashFloor, 0, SHADES - 1);
       const lvlBase = lvl * 4096;
       for (let x = 0; x < W; x++) {
         if (fx >= 0 && fy >= 0 && fx < MW && fy < MH) {
@@ -172,7 +174,25 @@ const Renderer = (() => {
 
       const wallId = GRID[mapY * MW + mapX];
       const tex = WALL_TEX[wallId] || WALL_TEX[1];
-      const lvl = clamp(Math.floor(SHADES - 1 - perp * 1.32) - (side ? 3 : 0), 0, SHADES - 1);
+      // Iluminación direccional realista (sol desértico) según orientación normal de la pared
+      let sunOffset = 0;
+      if (side === 0) {
+        sunOffset = (stepX < 0) ? 0 : -2; // Pared mirando al Este vs Oeste
+      } else {
+        sunOffset = (stepY < 0) ? 1 : -4; // Pared mirando al Sur (sol directo) vs Norte (sombra)
+      }
+      // Flash de boca dinámico iluminando paredes cercanas
+      const wallFlash = (player.flashTimer > 0) ? Math.round((player.flashTimer / 0.055) * 4 * Math.max(0, 1 - perp / 7.2)) : 0;
+      // Resplandor del led del C4 plantado en paredes cercanas
+      let bombGlow = 0;
+      if (bomb.state === 'planted') {
+        const dBomb = dist2D(mapX + 0.5, mapY + 0.5, bomb.x, bomb.y);
+        if (dBomb < 5.5) {
+          const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 130);
+          bombGlow = Math.round(pulse * 2 * (1 - dBomb / 5.5));
+        }
+      }
+      const lvl = clamp(Math.floor(SHADES - 1 - perp * 1.26) + sunOffset + wallFlash + bombGlow, 0, SHADES - 1);
       const lvlBase = lvl * 4096;
       const step = 64 / lineH;
       let texPos = (y0 - top) * step;
@@ -423,174 +443,359 @@ const Renderer = (() => {
     }
   }
 
-  /* ---------------- armas (viewmodel) ---------------- */
-  function drawHand(c, x, y, r, rot, glove) {
-    c.save(); c.translate(x, y); c.rotate(rot);
-    fillRound(c, -r * .5, -r * .6, r, r * 1.2, r * .35, glove ? '#3b3a32' : '#a5764f', 'rgba(0,0,0,.7)');
-    c.fillStyle = 'rgba(255,255,255,.06)';
-    c.fillRect(-r * .3, -r * .45, r * .5, r * .15);
-    c.restore();
-  }
+  /* ---------------- armas (viewmodel) y manos en primera persona ---------------- */
   function fillRound(c, x, y, w, h, r, fill, stroke) {
     c.beginPath();
-    const rr = Math.min(r, w / 2, h / 2);
+    const rr = Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2);
     c.moveTo(x + rr, y);
     c.arcTo(x + w, y, x + w, y + h, rr);
     c.arcTo(x + w, y + h, x, y + h, rr);
     c.arcTo(x, y + h, x, y, rr);
     c.arcTo(x, y, x + w, y, rr);
     c.closePath();
-    c.fillStyle = fill; c.fill();
+    if (fill) { c.fillStyle = fill; c.fill(); }
     if (stroke) { c.strokeStyle = stroke; c.lineWidth = 1.6; c.stroke(); }
   }
+
   function muzzle(c, x, y, s, alpha) {
     if (alpha <= 0) return;
     c.save();
     c.globalCompositeOperation = 'lighter';
-    const gr = c.createRadialGradient(x, y, 0, x, y, 46 * s);
-    gr.addColorStop(0, `rgba(255,240,190,${.9 * alpha})`);
-    gr.addColorStop(.25, `rgba(255,190,80,${.6 * alpha})`);
-    gr.addColorStop(1, 'rgba(255,120,20,0)');
+    const gr = c.createRadialGradient(x, y, 0, x, y, 52 * s);
+    gr.addColorStop(0, `rgba(255,245,210,${0.95 * alpha})`);
+    gr.addColorStop(0.25, `rgba(255,200,90,${0.75 * alpha})`);
+    gr.addColorStop(0.7, `rgba(255,130,30,${0.35 * alpha})`);
+    gr.addColorStop(1, 'rgba(255,90,10,0)');
     c.fillStyle = gr;
-    c.beginPath(); c.arc(x, y, 46 * s, 0, TAU); c.fill();
-    c.fillStyle = `rgba(255,245,205,${alpha})`;
+    c.beginPath(); c.arc(x, y, 52 * s, 0, TAU); c.fill();
+    c.fillStyle = `rgba(255,250,230,${alpha})`;
     c.beginPath();
-    for (let i = 0; i < 12; i++) {
-      const a = i / 12 * TAU;
-      const rr = (i % 2 ? 10 : 30) * s;
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * TAU;
+      const rr = (i % 2 ? 14 : 38) * s;
       c.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
     }
     c.closePath(); c.fill();
     c.restore();
   }
 
-  function drawWeaponModel(c, def, s, flash) {
-    const dark = '#191b1b', mid = '#2c2f2f', light = '#414647';
-    if (def.id === 'knife') {
-      // mango
-      fillRound(c, 6, -44, 20, 48, 6, '#2c2b26', '#0b0b09');
-      c.fillStyle = '#413f35'; c.fillRect(11, -38, 4, 36);
-      // hoja
-      c.beginPath();
-      c.moveTo(12, -40); c.lineTo(-8, -118); c.lineTo(22, -142); c.lineTo(28, -96); c.closePath();
-      c.fillStyle = '#b9c2c4'; c.fill();
-      c.strokeStyle = '#6f787a'; c.lineWidth = 2; c.stroke();
-      c.beginPath(); c.moveTo(16, -48); c.lineTo(0, -114); c.lineTo(15, -128); c.closePath();
-      c.fillStyle = 'rgba(255,255,255,.45)'; c.fill();
-      drawHand(c, 18, -16, 26, 0.2, true);
-      muzzle(c, -2, -130, s, flash * .6);
-      return;
-    }
-    if (def.id === 'glock') {
-      fillRound(c, -114, -46, 88, 20, 3, '#1c1f1f', '#070808');
-      c.fillStyle = 'rgba(255,255,255,.12)'; c.fillRect(-108, -43, 76, 2);
-      fillRound(c, -54, -42, 64, 24, 3, '#2a2d2d', '#070808');
-      fillRound(c, -46, -18, 54, 16, 3, '#181919', '#070808');
-      c.save(); c.translate(8, -12); c.rotate(1.28);
-      fillRound(c, 0, 0, 24, 58, 6, '#181919', '#070808');
-      c.restore();
-      drawHand(c, 20, 10, 34, 0.18, true);
-      drawHand(c, 2, 2, 30, -0.1, true);
-      muzzle(c, -115, -36, s, flash);
-      return;
-    }
-    if (def.id === 'usp' || def.id === 'deagle') {
-      const big = def.id === 'deagle';
-      const silver = big ? '#6b6f70' : '#2f3333';
-      // cañón
-      fillRound(c, -118, -48, 96, big ? 22 : 18, 3, silver, '#0b0c0c');
-      c.fillStyle = 'rgba(255,255,255,.16)'; c.fillRect(-112, -45, 82, 3);
-      // corredera
-      fillRound(c, -56, -44, 70, 26, 3, big ? '#8a9092' : '#3a3f3f', '#0b0c0c');
-      c.fillStyle = 'rgba(0,0,0,.25)';
-      for (let i = 0; i < 6; i++) c.fillRect(-48 + i * 8, -39, 4, 15);
-      // armazón
-      fillRound(c, -48, -20, 58, 16, 3, '#262929', '#0b0b0b');
-      // empuñadura
-      c.save(); c.translate(8, -14); c.rotate(1.28);
-      fillRound(c, 0, 0, 24, 60, 6, '#222424', '#0b0b0b');
-      c.fillStyle = 'rgba(255,255,255,.05)'; c.fillRect(4, 5, 5, 46);
-      c.restore();
-      // mano derecha
-      drawHand(c, 22, 10, 34, 0.18, true);
-      drawHand(c, 2, 2, 30, -0.1, true);
-      // punto de mira
-      c.fillStyle = '#d7dede'; c.fillRect(-116, -50, 4, 3);
-      muzzle(c, -119, -37, s, flash);
-      return;
-    }
-    if (def.id === 'awp') {
-      // culata
-      fillRound(c, 48, -34, 74, 34, 5, '#42503c', '#0b0d0a');
-      fillRound(c, 18, -30, 100, 26, 4, '#4b5a43', '#0b0d0a');
-      // cañón
-      fillRound(c, -150, -30, 176, 9, 3, '#2b332c', '#080a08');
-      fillRound(c, -166, -33, 26, 15, 4, '#222822', '#080a08');
-      c.fillStyle = 'rgba(255,255,255,.1)'; c.fillRect(-144, -28, 150, 2);
-      // guardamanos
-      fillRound(c, -108, -22, 76, 18, 3, '#39442f', '#0b0d0a');
-      // cargador
-      fillRound(c, -2, -8, 26, 30, 3, '#333d30', '#080a08');
-      // cerrojo
-      c.fillStyle = '#6d756a'; c.fillRect(30, -34, 26, 6); c.beginPath(); c.arc(58, -31, 4, 0, TAU); c.fill();
-      // mira telescópica
-      fillRound(c, -52, -64, 92, 20, 8, '#181c17', '#070807');
-      fillRound(c, -60, -70, 18, 30, 5, '#242a22', '#070807');
-      fillRound(c, 36, -68, 16, 26, 5, '#242a22', '#070807');
-      c.fillStyle = 'rgba(140,190,210,.25)'; c.beginPath(); c.arc(44, -55, 5, 0, TAU); c.fill();
-      drawHand(c, -74, 2, 32, -0.15, true);
-      drawHand(c, 28, 18, 34, 0.22, true);
-      muzzle(c, -167, -24, s, flash);
-      return;
-    }
-    if (def.id === 'ak') {
-      // culata
-      fillRound(c, 90, -22, 54, 34, 5, '#874b24', '#080909');
-      fillRound(c, 134, -18, 20, 28, 4, '#6b3716', '#080909');
-      // cajón
-      fillRound(c, 20, -24, 84, 36, 5, '#222525', '#080909');
-      // guardamanos
-      fillRound(c, -88, -26, 70, 22, 4, '#874b24', '#080909');
-      fillRound(c, -84, -22, 62, 16, 3, '#a05c30', '#080909');
-      // cañón
-      fillRound(c, -156, -30, 80, 11, 3, '#181a1a', '#060707');
-      fillRound(c, -168, -32, 16, 15, 3, '#222525', '#060707');
-      // cargador curvo
-      c.save(); c.translate(8, -2); c.rotate(0.32);
-      fillRound(c, 0, 0, 26, 58, 5, '#965c26', '#080909');
-      c.fillStyle = 'rgba(0,0,0,.3)'; c.fillRect(4, 6, 5, 44);
-      c.restore();
-      // manos
-      drawHand(c, -64, 4, 30, -0.2, true);
-      drawHand(c, 50, 16, 34, 0.24, true);
-      muzzle(c, -170, -24, s, flash);
-      return;
-    }
-    // M4A1-S
-    fillRound(c, 22, -22, 88, 40, 6, '#232727', '#090a0a');
-    fillRound(c, -82, -26, 132, 24, 4, '#2b3030', '#090a0a');
-    fillRound(c, -78, -22, 60, 19, 3, '#383e3e', '#090a0a');
-    // cañón y supresor
-    fillRound(c, -152, -31, 84, 14, 4, '#202424', '#070808');
-    fillRound(c, -170, -34, 26, 20, 5, '#191d1d', '#070808');
-    c.fillStyle = 'rgba(255,255,255,.10)'; c.fillRect(-162, -30, 14, 2);
-    // culata
-    fillRound(c, 96, -20, 48, 32, 5, '#1e2222', '#090a0a');
-    fillRound(c, 136, -18, 18, 28, 4, '#151818', '#090a0a');
-    // cargador
-    c.save(); c.translate(6, -4); c.rotate(0.16);
-    fillRound(c, 0, 0, 27, 52, 4, '#262b2b', '#080909');
-    c.fillStyle = 'rgba(255,255,255,.05)'; c.fillRect(4, 5, 4, 38);
+  function drawTacticalArm(c, x1, y1, x2, y2, w1, w2, team, isLeft) {
+    const isCT = (team === 'ct');
+    const sleeve = isCT ? '#202937' : '#5c523f';
+    const sleeveDark = isCT ? '#131922' : '#3e3729';
+    const sleeveLight = isCT ? '#334155' : '#736850';
+    const cuffColor = isCT ? '#11141a' : '#272218';
+
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len, ny = dx / len;
+
+    c.save();
+    c.beginPath();
+    c.moveTo(x1 - nx * w1 * 0.5, y1 - ny * w1 * 0.5);
+    c.lineTo(x2 - nx * w2 * 0.5, y2 - ny * w2 * 0.5);
+    c.lineTo(x2 + nx * w2 * 0.5, y2 + ny * w2 * 0.5);
+    c.lineTo(x1 + nx * w1 * 0.5, y1 + ny * w1 * 0.5);
+    c.closePath();
+
+    const gr = c.createLinearGradient(
+      x1 - nx * w1 * 0.5, y1 - ny * w1 * 0.5,
+      x1 + nx * w1 * 0.5, y1 + ny * w1 * 0.5
+    );
+    gr.addColorStop(0, sleeveDark);
+    gr.addColorStop(0.35, sleeveLight);
+    gr.addColorStop(0.75, sleeve);
+    gr.addColorStop(1, sleeveDark);
+    c.fillStyle = gr;
+    c.fill();
+    c.strokeStyle = 'rgba(0,0,0,0.6)';
+    c.lineWidth = 2;
+    c.stroke();
+
+    // Costuras y pliegues tácticos de la tela
+    c.strokeStyle = sleeveDark;
+    c.lineWidth = 2.4;
+    c.beginPath();
+    const mx = (x1 + x2) * 0.5, my = (y1 + y2) * 0.5;
+    c.moveTo(mx - nx * w1 * 0.35, my - ny * w1 * 0.35);
+    c.quadraticCurveTo(mx, my, mx + nx * w1 * 0.3, my + ny * w1 * 0.3);
+    c.stroke();
+
+    // Muñequera táctica / correa de velcro del guante
+    c.save();
+    c.translate(x2, y2);
+    const ang = Math.atan2(dy, dx);
+    c.rotate(ang);
+    fillRound(c, -8, -w2 * 0.58, 15, w2 * 1.16, 4, cuffColor, 'rgba(0,0,0,0.8)');
+    c.fillStyle = 'rgba(255,255,255,0.12)';
+    c.fillRect(-4, -w2 * 0.45, 5, w2 * 0.9);
     c.restore();
-    // asa
-    fillRound(c, 44, -14, 20, 40, 4, '#202424', '#080909');
-    // riel y mira
-    c.fillStyle = '#151818'; c.fillRect(-60, -30, 90, 5);
-    c.fillStyle = '#3d4444'; c.fillRect(-52, -37, 7, 9); c.fillRect(20, -37, 6, 9);
-    // manos
-    drawHand(c, -58, 4, 30, -0.2, true);
-    drawHand(c, 52, 16, 34, 0.24, true);
-    muzzle(c, -173, -24, s, flash);
+
+    c.restore();
+  }
+
+  function drawTacticalGlove(c, x, y, r, rot, flip) {
+    c.save();
+    c.translate(x, y);
+    c.rotate(rot);
+    if (flip) c.scale(1, -1);
+
+    const gloveDark = '#181a1c';
+    const gloveMid  = '#26292b';
+    const gloveLight = '#3b4043';
+    const armorKnuckle = '#0f1011';
+
+    // Palma y dorso del guante
+    fillRound(c, -r * 0.55, -r * 0.5, r * 1.1, r * 1.05, r * 0.35, gloveMid, 'rgba(0,0,0,0.85)');
+
+    // Placa protectora de nudillos de composite de carbono
+    fillRound(c, -r * 0.35, -r * 0.45, r * 0.75, r * 0.45, r * 0.22, armorKnuckle, 'rgba(0,0,0,0.9)');
+    c.fillStyle = 'rgba(255,255,255,0.16)';
+    c.fillRect(-r * 0.25, -r * 0.4, r * 0.55, 2.5);
+
+    // Dedos articulados envolviendo la empuñadura / guardamanos
+    const fingerW = r * 0.24;
+    const fingerLen = r * 0.70;
+    for (let f = 0; f < 4; f++) {
+      const fy = -r * 0.38 + f * (fingerW + 2);
+      const fx = r * 0.24;
+      fillRound(c, fx, fy, fingerLen, fingerW, fingerW * 0.4, gloveDark, 'rgba(0,0,0,0.8)');
+      // Almohadilla de agarre antideslizante
+      c.fillStyle = gloveLight;
+      c.fillRect(fx + 3, fy + 2, fingerLen * 0.45, fingerW * 0.5);
+    }
+
+    // Pulgar táctico
+    c.save();
+    c.translate(-r * 0.2, r * 0.35);
+    c.rotate(0.5);
+    fillRound(c, 0, -r * 0.18, r * 0.65, r * 0.32, r * 0.15, gloveDark, 'rgba(0,0,0,0.85)');
+    c.fillStyle = 'rgba(255,255,255,0.12)';
+    c.fillRect(4, -r * 0.12, r * 0.4, 2);
+    c.restore();
+
+    c.restore();
+  }
+
+  function drawWeaponAndHands(c, def, team, s, flash, isPistol, isKnife) {
+    if (isKnife) {
+      // Brazo izquierdo en guardia táctica
+      drawTacticalArm(c, -160, 210, -85, 75, 76, 50, team, true);
+      drawTacticalGlove(c, -85, 75, 28, -0.35, false);
+
+      // Brazo derecho sosteniendo el cuchillo
+      drawTacticalArm(c, 150, 220, 28, 25, 80, 52, team, false);
+
+      // Mango táctico del cuchillo
+      fillRound(c, 2, -26, 20, 52, 6, '#232525', '#0b0c0c');
+      fillRound(c, 0, 22, 24, 8, 3, '#8d9496', '#090a0a');
+      c.fillStyle = '#141617';
+      for (let i = 0; i < 4; i++) c.fillRect(5, -20 + i * 9, 14, 4);
+
+      // Guarda de acero
+      fillRound(c, -10, -32, 44, 8, 3, '#757c80', '#101213');
+
+      // Hoja táctica tipo bayoneta de combate
+      c.beginPath();
+      c.moveTo(10, -32);
+      c.lineTo(6, -135);
+      c.lineTo(-12, -115);
+      c.lineTo(-8, -32);
+      c.closePath();
+      const bladeGrad = c.createLinearGradient(-10, -80, 10, -80);
+      bladeGrad.addColorStop(0, '#667075');
+      bladeGrad.addColorStop(0.35, '#cdd6db');
+      bladeGrad.addColorStop(0.7, '#ffffff');
+      bladeGrad.addColorStop(1, '#8f989c');
+      c.fillStyle = bladeGrad;
+      c.fill();
+      c.strokeStyle = '#434b4f';
+      c.lineWidth = 1.8;
+      c.stroke();
+
+      // Bisel afilado y canal de sangre
+      c.beginPath();
+      c.moveTo(8, -34);
+      c.lineTo(5, -130);
+      c.lineTo(0, -110);
+      c.lineTo(0, -34);
+      c.closePath();
+      c.fillStyle = 'rgba(255,255,255,0.45)';
+      c.fill();
+
+      // Mano derecha empuñando el cuchillo
+      drawTacticalGlove(c, 12, -6, 32, 0.22, false);
+      return;
+    }
+
+    if (isPistol) {
+      // Brazo y mano izquierda en agarre táctico de dos manos (Weaver)
+      drawTacticalArm(c, -85, 220, -8, 28, 76, 48, team, true);
+      drawTacticalGlove(c, -6, 24, 30, 0.42, false);
+
+      // Brazo derecho
+      drawTacticalArm(c, 145, 220, 18, 30, 78, 50, team, false);
+
+      if (def.id === 'glock') {
+        // Glock-18
+        fillRound(c, -78, -34, 82, 22, 3, '#1c1f20', '#070808');
+        c.fillStyle = 'rgba(255,255,255,0.12)'; c.fillRect(-74, -32, 70, 2);
+        // Ranuras traseras de la corredera
+        c.fillStyle = 'rgba(0,0,0,0.35)';
+        for (let i = 0; i < 5; i++) c.fillRect(-10 + i * 4, -31, 2, 16);
+        // Armazón y empuñadura
+        fillRound(c, -46, -16, 50, 15, 3, '#181a1b', '#070808');
+        fillRound(c, -4, -14, 24, 56, 5, '#17191a', '#070808');
+        // Mano derecha
+        drawTacticalGlove(c, 14, 10, 32, 0.2, false);
+        muzzle(c, -80, -23, s, flash);
+        return;
+      }
+
+      if (def.id === 'deagle') {
+        // Desert Eagle .50 AE — corredera maciza en cromo cepillado
+        fillRound(c, -88, -38, 92, 28, 4, '#82898c', '#0f1112');
+        c.fillStyle = 'rgba(255,255,255,0.3)'; c.fillRect(-82, -35, 78, 3);
+        // Ranuras y bisel frontal
+        c.fillStyle = 'rgba(0,0,0,0.25)';
+        for (let i = 0; i < 6; i++) c.fillRect(-22 + i * 6, -32, 3, 18);
+        fillRound(c, -50, -14, 54, 16, 3, '#2a2d2e', '#0b0c0c');
+        fillRound(c, -4, -12, 28, 58, 5, '#181a1b', '#0b0c0c');
+        c.fillStyle = 'rgba(255,255,255,0.06)'; c.fillRect(4, 5, 5, 40);
+        // Mano derecha
+        drawTacticalGlove(c, 14, 10, 34, 0.2, false);
+        muzzle(c, -90, -24, s, flash);
+        return;
+      }
+
+      // USP-S (táctica con silenciador acoplado)
+      fillRound(c, -74, -34, 78, 20, 3, '#222527', '#08090a');
+      c.fillStyle = 'rgba(255,255,255,0.14)'; c.fillRect(-70, -32, 66, 2);
+      // Silenciador táctico QD
+      fillRound(c, -150, -33, 78, 18, 4, '#1b1d1e', '#070808');
+      c.fillStyle = 'rgba(255,255,255,0.08)'; c.fillRect(-142, -31, 62, 2);
+      // Puntos de mira
+      c.fillStyle = '#ffffff'; c.fillRect(-72, -37, 3, 3); c.fillRect(-2, -37, 3, 3);
+      fillRound(c, -44, -16, 48, 15, 3, '#1f2223', '#08090a');
+      fillRound(c, -4, -14, 24, 56, 5, '#1b1d1e', '#08090a');
+      // Mano derecha
+      drawTacticalGlove(c, 14, 10, 32, 0.2, false);
+      muzzle(c, -152, -24, s, flash);
+      return;
+    }
+
+    // Fusiles de asalto, francotirador y subfusiles (AK-47, M4A1-S, AWP, MP5)
+    // Brazo izquierdo apoyando el guardamanos desde abajo
+    drawTacticalArm(c, -140, 230, -68, 22, 80, 52, team, true);
+
+    // Brazo derecho en la empuñadura
+    drawTacticalArm(c, 160, 230, 46, 26, 82, 54, team, false);
+
+    if (def.id === 'ak') {
+      // AK-47 — Culata de madera rusa laminada
+      fillRound(c, 88, -22, 56, 34, 5, '#874b24', '#080909');
+      fillRound(c, 134, -18, 20, 28, 4, '#6b3716', '#080909');
+      c.fillStyle = 'rgba(255,255,255,0.12)'; c.fillRect(92, -18, 46, 3);
+      // Cajón de mecanismos de acero estampado
+      fillRound(c, 18, -25, 86, 38, 5, '#222527', '#080909');
+      // Guardamanos de madera
+      fillRound(c, -92, -26, 72, 23, 4, '#874b24', '#080909');
+      fillRound(c, -88, -22, 64, 17, 3, '#a05c30', '#080909');
+      // Cañón, tubo de gases y punto de mira
+      fillRound(c, -160, -30, 84, 11, 3, '#181a1a', '#060707');
+      fillRound(c, -172, -32, 16, 15, 3, '#222525', '#060707');
+      fillRound(c, -162, -42, 7, 12, 2, '#181a1a', '#060707');
+      // Cargador curvo banana
+      c.save(); c.translate(6, -2); c.rotate(0.32);
+      fillRound(c, 0, 0, 27, 60, 5, '#965c26', '#080909');
+      c.fillStyle = 'rgba(0,0,0,0.3)'; c.fillRect(4, 6, 5, 46);
+      c.restore();
+      // Empuñadura
+      fillRound(c, 44, -12, 22, 40, 5, '#874b24', '#080909');
+      // Mano izquierda en el guardamanos
+      drawTacticalGlove(c, -68, 14, 30, -0.22, false);
+      // Mano derecha en el gatillo
+      drawTacticalGlove(c, 48, 18, 34, 0.25, false);
+      muzzle(c, -180, -24, s, flash);
+      return;
+    }
+
+    if (def.id === 'awp') {
+      // AWP — Chasis verde oliva OD con culata perforada
+      fillRound(c, 46, -34, 76, 36, 6, '#3e4d38', '#0b0d0a');
+      fillRound(c, 16, -30, 102, 28, 5, '#485740', '#0b0d0a');
+      c.fillStyle = 'rgba(255,255,255,0.08)'; c.fillRect(20, -28, 80, 2);
+      // Guardamanos
+      fillRound(c, -112, -24, 80, 20, 4, '#394630', '#0b0d0a');
+      // Cañón flotante pesado
+      fillRound(c, -165, -30, 180, 10, 3, '#242a25', '#080a08');
+      // Freno de boca masivo de doble deflector
+      fillRound(c, -186, -34, 24, 18, 4, '#1b201c', '#080a08');
+      // Cerrojo cromado
+      c.fillStyle = '#7a8277'; c.fillRect(28, -34, 28, 6);
+      c.beginPath(); c.arc(58, -31, 4.5, 0, TAU); c.fill();
+      // Mira telescópica de alta precisión
+      fillRound(c, -54, -66, 96, 22, 8, '#161915', '#070807');
+      fillRound(c, -64, -72, 20, 32, 5, '#222720', '#070807');
+      fillRound(c, 36, -70, 18, 28, 5, '#222720', '#070807');
+      c.fillStyle = 'rgba(140,195,220,0.3)'; c.beginPath(); c.arc(45, -57, 5, 0, TAU); c.fill();
+      // Cargador de 5 balas
+      fillRound(c, -4, -8, 28, 32, 3, '#2e372a', '#080a08');
+      // Mano izquierda en el apoyo delantero
+      drawTacticalGlove(c, -74, 12, 32, -0.2, false);
+      // Mano derecha
+      drawTacticalGlove(c, 36, 18, 34, 0.22, false);
+      muzzle(c, -188, -24, s, flash);
+      return;
+    }
+
+    if (def.id === 'mp5') {
+      // MP5-SD — Subfusil con silenciador integral
+      fillRound(c, 20, -22, 60, 32, 5, '#222627', '#080909');
+      fillRound(c, -70, -24, 92, 22, 4, '#282d2e', '#080909');
+      // Silenciador integral estriado
+      fillRound(c, -150, -28, 86, 20, 5, '#1e2122', '#070808');
+      c.fillStyle = 'rgba(0,0,0,0.35)';
+      for (let i = 0; i < 8; i++) c.fillRect(-142 + i * 10, -27, 4, 18);
+      // Culata retráctil
+      fillRound(c, 78, -18, 48, 14, 3, '#191c1d', '#080909');
+      // Cargador curvo 9mm
+      c.save(); c.translate(4, -2); c.rotate(0.24);
+      fillRound(c, 0, 0, 22, 54, 4, '#1b1d1e', '#080909');
+      c.restore();
+      // Mano izquierda en el silenciador
+      drawTacticalGlove(c, -65, 12, 30, -0.22, false);
+      // Mano derecha
+      drawTacticalGlove(c, 44, 16, 34, 0.24, false);
+      muzzle(c, -152, -18, s, flash);
+      return;
+    }
+
+    // M4A1-S (arma táctica con silenciador)
+    fillRound(c, 20, -22, 90, 40, 6, '#232729', '#090a0a');
+    fillRound(c, -84, -26, 134, 24, 4, '#2c3133', '#090a0a');
+    fillRound(c, -80, -22, 62, 19, 3, '#3a4042', '#090a0a');
+    // Cañón y silenciador cilíndrico
+    fillRound(c, -155, -31, 88, 15, 4, '#202425', '#070808');
+    fillRound(c, -178, -34, 28, 21, 5, '#181b1c', '#070808');
+    c.fillStyle = 'rgba(255,255,255,0.12)'; c.fillRect(-168, -30, 16, 2);
+    // Culata retráctil de carabina
+    fillRound(c, 98, -20, 48, 32, 5, '#1e2224', '#090a0a');
+    fillRound(c, 138, -18, 18, 28, 4, '#151819', '#090a0a');
+    // Cargador STANAG
+    c.save(); c.translate(6, -4); c.rotate(0.16);
+    fillRound(c, 0, 0, 26, 52, 4, '#272b2d', '#080909');
+    c.fillStyle = 'rgba(255,255,255,0.06)'; c.fillRect(4, 5, 4, 38);
+    c.restore();
+    // Asa superior y raíles
+    fillRound(c, 42, -14, 20, 40, 4, '#202425', '#080909');
+    c.fillStyle = '#151819'; c.fillRect(-62, -30, 92, 5);
+    c.fillStyle = '#3e4547'; c.fillRect(-54, -37, 7, 9); c.fillRect(20, -37, 6, 9);
+    // Mano izquierda en el guardamanos
+    drawTacticalGlove(c, -64, 12, 30, -0.22, false);
+    // Mano derecha en la empuñadura
+    drawTacticalGlove(c, 48, 18, 34, 0.24, false);
+    muzzle(c, -180, -24, s, flash);
   }
 
   function drawViewModel(cam, cw, ch) {
@@ -600,51 +805,73 @@ const Renderer = (() => {
     const def = getCurrentDef();
     if (!def) return;
     const c = ctx;
-    const s = Math.min(cw, ch) / 880;
+
+    const s = Math.max(0.88, Math.min(cw, ch) / 600);
     const speed = Math.hypot(player.vx, player.vy);
     const bob = player.bob;
     const walk = clamp(speed / 3.2, 0, 1);
-    const bx = Math.sin(bob * 5.2) * 7 * walk + Math.sin(bob * 1.4) * 2;
-    const by = Math.abs(Math.cos(bob * 5.2)) * 5 * walk;
+    const bx = Math.sin(bob * 5.2) * 8 * walk + Math.sin(bob * 1.4) * 2;
+    const by = Math.abs(Math.cos(bob * 5.2)) * 6 * walk;
     const kick = player.viewKick || 0;
+
     let reloadDip = 0, reloadRot = 0;
     if (player.reload > 0) {
       const t = 1 - player.reload / player.reloadTotal;
-      reloadDip = Math.sin(t * Math.PI) * 90;
+      reloadDip = Math.sin(t * Math.PI) * 75;
       reloadRot = Math.sin(t * Math.PI) * 0.32;
     }
     let drawDip = 0;
-    if (player.drawTimer > 0) drawDip = (player.drawTimer / 0.42) * 120;
-    const sway = clamp(-player.recoilYaw * 12, -20, 20);
+    if (player.drawTimer > 0) drawDip = (player.drawTimer / 0.42) * 140;
+    const swayX = clamp(-player.recoilYaw * 14, -24, 24);
+    const swayY = clamp(player.recoilPitch * 12, -18, 18);
+
+    // Animación de ataque cuerpo a cuerpo con cuchillo
+    let knifeSlashX = 0, knifeSlashY = 0, knifeSlashRot = 0;
+    if (player.knifeSwing > 0) {
+      const st = 1 - (player.knifeSwing / 0.3);
+      knifeSlashRot = -Math.sin(st * Math.PI) * 0.75;
+      knifeSlashX = -Math.sin(st * Math.PI) * 70;
+      knifeSlashY = Math.sin(st * Math.PI) * 35;
+    }
+
+    const isPistol = (def.slot === 2);
+    const isKnife = (def.id === 'knife');
+
+    let anchorX = cw * 0.67 + bx + swayX;
+    let anchorY = ch * 0.86 + by + kick * 28 + reloadDip + drawDip + swayY;
+    if (isPistol) {
+      anchorX = cw * 0.63 + bx + swayX * 0.7;
+      anchorY = ch * 0.85 + by + kick * 32 + reloadDip + drawDip + swayY;
+    } else if (isKnife) {
+      anchorX = cw * 0.65 + bx + swayX + knifeSlashX;
+      anchorY = ch * 0.84 + by + drawDip + knifeSlashY;
+    }
 
     c.save();
-    c.translate(cw * 0.70 + bx + sway, ch + 58 + by + kick * 34 + reloadDip + drawDip);
+    c.translate(anchorX, anchorY);
     c.scale(s, s);
-    c.rotate(-0.035 + reloadRot + player.recoilPitch * 0.5);
-    c.globalAlpha = clamp(1 - player.drawTimer / 0.5, 0, 1);
+    c.rotate(-0.035 + reloadRot + player.recoilPitch * 0.45 + knifeSlashRot);
+    c.globalAlpha = clamp(1 - player.drawTimer / 0.45, 0, 1);
 
-    // sombra / brazo
-    c.fillStyle = 'rgba(0,0,0,.25)';
-    fillRound(c, -60, 40, 300, 80, 40, 'rgba(0,0,0,.22)');
-    // brazo derecho
-    fillRound(c, 60, 20, 140, 90, 30, '#4a4538', 'rgba(0,0,0,.5)');
-    fillRound(c, 150, 60, 70, 50, 20, '#3b372d');
-
+    const team = player.team || 'ct';
     const flash = player.flashTimer > 0 ? clamp(player.flashTimer / 0.055, 0, 1) : 0;
-    drawWeaponModel(c, def, s, flash);
+
+    drawWeaponAndHands(c, def, team, s, flash, isPistol, isKnife);
 
     c.restore();
 
-    // arma izquierda / manos en el borde
-    const t = performance.now() / 1000;
-    c.save();
-    c.globalAlpha = clamp(1 - player.drawTimer / 0.5, 0, 1);
-    c.translate(cw * 0.28 + Math.sin(t * .8) * 2, ch + 30);
-    c.scale(s, s);
-    c.rotate(0.2);
-    fillRound(c, -30, -40, 90, 120, 34, '#4b4639', 'rgba(0,0,0,.45)');
-    drawHand(c, 6, -6, 38, 0.3, true);
-    c.restore();
+    // Estela visual dinámica del cuchillo al atacar
+    if (player.knifeSwing > 0) {
+      const sw = player.knifeSwing / 0.3;
+      c.save();
+      c.globalAlpha = sw * 0.75;
+      c.strokeStyle = 'rgba(235,245,255,0.85)';
+      c.lineWidth = 4 * s;
+      c.beginPath();
+      c.arc(cw * 0.58, ch * 0.68, 130 * s, -1.0, 0.4);
+      c.stroke();
+      c.restore();
+    }
   }
 
   /* ---------------- mira / scope ---------------- */
@@ -736,6 +963,33 @@ const Renderer = (() => {
     ctx.restore();
   }
 
+  function drawSkySun(cw, ch, cam) {
+    const sunYaw = 1.15; // Azimut del sol desértico (Sureste hacia Long A)
+    const relAng = angleDiff(sunYaw, cam.yaw);
+    if (Math.abs(relAng) < cam.planeLen * 1.5) {
+      const sunX = (cw / 2) + Math.tan(relAng) * (cw / (2 * cam.planeLen));
+      const sunY = (cam.horizon * (ch / H)) - (ch * 0.22);
+      if (sunY < cam.horizon * (ch / H) + 20 && sunX > -100 && sunX < cw + 100) {
+        const zCol = clamp(Math.round(sunX * W / cw), 0, W - 1);
+        if (!zbuf || zbuf[zCol] > 18) {
+          ctx.save();
+          ctx.globalCompositeOperation = 'screen';
+          const rSun = Math.min(cw, ch) * 0.15;
+          const gr = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, rSun);
+          gr.addColorStop(0, 'rgba(255, 255, 235, 0.9)');
+          gr.addColorStop(0.25, 'rgba(255, 225, 140, 0.55)');
+          gr.addColorStop(0.65, 'rgba(255, 175, 80, 0.20)');
+          gr.addColorStop(1, 'rgba(255, 130, 40, 0)');
+          ctx.fillStyle = gr;
+          ctx.beginPath();
+          ctx.arc(sunX, sunY, rSun, 0, TAU);
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+    }
+  }
+
   /* ---------------- frame ---------------- */
   function render() {
     const cam = getCam();
@@ -755,7 +1009,20 @@ const Renderer = (() => {
     ctx.drawImage(bufferCanvas, 0, 0, W, H, sx, sy, cw + Math.abs(sx) * 1.2, ch + Math.abs(sy) * 1.2);
     if (sx || sy) { ctx.fillStyle = '#060706'; ctx.fillRect(0, ch - 1, cw, 1); }
 
+    drawSkySun(cw, ch, cam);
     drawEffects(cam);
+
+    // Viñeta táctica suave para atmósfera y contraste cinemático
+    ctx.save();
+    const vigR1 = Math.min(cw, ch) * 0.44;
+    const vigR2 = Math.max(cw, ch) * 0.78;
+    const vig = ctx.createRadialGradient(cw / 2, ch / 2, vigR1, cw / 2, ch / 2, vigR2);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, 'rgba(10,8,6,0.22)');
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, cw, ch);
+    ctx.restore();
+
     drawViewModel(cam, cw, ch);
     drawCrosshair(cw, ch);
     drawScope(cw, ch);
