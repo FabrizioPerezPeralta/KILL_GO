@@ -55,9 +55,12 @@
 
 - **Economía y Armería (Buy Menu):**
   - Fase de compra táctica con temporizador al inicio de cada ronda.
-  - Armas secundarias: **USP-S**, **Desert Eagle**.
-  - Armas primarias: **MP5-SD**, **M4A1-S**, **AWP**.
+  - Armas secundarias: **Glock-18** (pistola inicial T), **USP-S** (pistola inicial CT), **Desert Eagle**.
+  - Armas primarias: **AK-47** (rifle de asalto de alta potencia T · 38 daño), **MP5-SD**, **M4A1-S**, **AWP**.
   - Equipo táctico: **Chaleco Kevlar** (absorción de daño) y **Kit de Desactivación** (reduce tiempo de desactivación de 10s a 5s).
+  - Jugabilidad C4 completa para ambos bandos: los terroristas pueden portar y plantar el C4 en el sitio A (`[E]`), y los antiterroristas pueden desactivarlo (`[E]`).
+  - Marcador táctico 5 vs 5 (`TAB`) con roster simultáneo para ambos bandos, seguimiento de bajas, muertes, headshots y estado en vivo o caído.
+  - Control de volumen maestro y efecto acústico de zumbido (tinnitus) tras la detonación del C4.
 
 ---
 
@@ -72,14 +75,16 @@
 | **Rueda del Ratón** | Ciclar rápidamente entre armas disponibles |
 | **1, 2, 3** / **Numpad 1, 2, 3** | Seleccionar arma Primaria / Secundaria / Cuchillo |
 | **R** | Recargar arma actual |
-| **E (Mantener)** | Desactivar la bomba C4 (permanecer quieto junto a ella) |
+| **G** | Soltar arma primaria en el suelo (Drop Weapon) |
+| **Y** | Abrir chat táctico multijugador |
+| **E (Mantener)** | Desactivar C4 (CT) / Plantar C4 en sitio A (T) |
 | **Shift (Mantener)** | Caminar en silencio (pasos sigilosos, mayor precisión) |
 | **Ctrl o C** | Agacharse (reduce tamaño y aumenta precisión) |
 | **Espacio** | Saltar |
-| **Tab (Mantener)** | Ver el Marcador de la partida (*Scoreboard*) |
+| **Tab (Mantener)** | Ver el Marcador 5 vs 5 de la partida (*Scoreboard*) |
 | **Escape** | Pausar / Reanudar partida táctica |
 | **M** | Silenciar / Activar sonido |
-| **1 al 6 (en Compra)** | Comprar armas o equipamiento rápidamente |
+| **1 al 7 (en Compra)** | Comprar armas o equipamiento rápidamente |
 | **Enter** | Iniciar partida / Comenzar ronda / Continuar |
 
 ---
@@ -90,13 +95,15 @@
 CSGOEPIS/
 ├── .github/
 │   └── workflows/
-│       └── deploy.yml      # Automatización de despliegue en GitHub Pages
+│       └── deploy.yml      # Automatización de despliegue en GitHub Pages y validación de sintaxis
 ├── js/
 │   ├── textures.js         # Generación procedural de texturas, sprites LUT y mapa
 │   ├── render.js           # Motor de raycasting 3D, buffer de píxeles y vista 2D
 │   ├── game.js             # Lógica del jugador, armas, economía y audio WebAudio
 │   ├── ai.js               # Algoritmo A*, comportamiento de bots, combate y C4
-│   └── ui.js               # HUD, radar, menú de compra, controles e interfaz
+│   ├── ui.js               # HUD, radar, menú de compra, controles e interfaz
+│   ├── multiplayer.js      # Lógica de red P2P WebRTC, sincronización de salas 5v5
+│   └── peerjs.min.js       # Librería cliente WebRTC PeerJS
 ├── index.html              # Estructura del lienzo Canvas y pantallas HTML
 ├── style.css               # Estilos visuales oscuros, HUD táctico y diseño responsivo
 ├── .nojekyll               # Desactiva Jekyll en GitHub Pages (preserva imágenes con _)

@@ -238,12 +238,26 @@ const Multiplayer = (() => {
         }
       } else if (msg.type === 'CLIENT_TICK') {
         handleClientTick(conn.peer, msg);
-      } else if (msg.type === 'CLIENT_SHOOT') {
+      } else if (msg.type === 'CLIENT_SHOOT' || msg.type === 'REMOTE_SHOOT') {
         handleClientShoot(conn.peer, msg);
+      } else if (msg.type === 'CLIENT_HIT') {
+        handleClientHit(conn.peer, msg);
       } else if (msg.type === 'CLIENT_DEFUSE') {
         handleClientDefuse(conn.peer, msg);
       } else if (msg.type === 'CLIENT_PLANT') {
         handleClientPlant(conn.peer, msg);
+      } else if (msg.type === 'CHAT_MSG') {
+        if (typeof addChatMessage === 'function') addChatMessage(msg.sender, msg.team, msg.text);
+        for (const [id, c] of connections) {
+          if (id !== conn.peer && c.open) c.send(msg);
+        }
+      } else if (msg.type === 'DROP_WEAPON') {
+        if (typeof droppedWeapons !== 'undefined') {
+          droppedWeapons.push({ id: msg.id, x: msg.x, y: msg.y, mag: msg.mag, reserve: msg.reserve, bobPhase: Math.random() * 6.28 });
+        }
+        for (const [id, c] of connections) {
+          if (id !== conn.peer && c.open) c.send(msg);
+        }
       }
     });
 
@@ -316,6 +330,17 @@ const Multiplayer = (() => {
       } else if (msg.event === 'exploded') {
         explodeBomb();
       }
+    } else if (msg.type === 'ROUND_NEXT') {
+      game.round = msg.round;
+      game.ctScore = msg.ctScore;
+      game.tScore = msg.tScore;
+      game.state = 'buy';
+      game.buyTimer = BUY_TIME;
+      game.buyExpired = false;
+      game.roundTime = ROUND_TIME;
+      setupLocalPlayerForMultiplayer();
+      openBuyMenu();
+      updateHUD();
     } else if (msg.type === 'ROUND_OVER') {
       endRound(msg.ctWin, msg.reason);
     } else if (msg.type === 'KILL_EVENT') {
@@ -325,6 +350,12 @@ const Multiplayer = (() => {
         if (msg.head) player.headshots++;
         player.money = Math.min(MAX_MONEY, player.money + msg.reward);
         sfxKill(msg.head);
+      }
+    } else if (msg.type === 'CHAT_MSG') {
+      if (typeof addChatMessage === 'function') addChatMessage(msg.sender, msg.team, msg.text);
+    } else if (msg.type === 'DROP_WEAPON') {
+      if (typeof droppedWeapons !== 'undefined') {
+        droppedWeapons.push({ id: msg.id, x: msg.x, y: msg.y, mag: msg.mag, reserve: msg.reserve, bobPhase: Math.random() * 6.28 });
       }
     }
   }
@@ -473,7 +504,7 @@ const Multiplayer = (() => {
 
     // Armas por bando
     if (player.team === 't') {
-      player.slots = { 1: null, 2: gunObj('usp'), 3: { id: 'knife', mag: 0, reserve: 0 } };
+      player.slots = { 1: null, 2: gunObj('glock'), 3: { id: 'knife', mag: 0, reserve: 0 } };
     } else {
       player.slots = { 1: null, 2: gunObj('usp'), 3: { id: 'knife', mag: 0, reserve: 0 } };
     }
@@ -509,8 +540,23 @@ const Multiplayer = (() => {
   /* ---------------------------------------------------------------------
      CICLO DE RED (TICK)
      --------------------------------------------------------------------- */
-  function tick(now) {
+  function updateRemotePlayersInterpolation(dt) {
+    for (const rp of remotePlayers.values()) {
+      if (rp.currX !== undefined && rp.targetX !== undefined) {
+        rp.currX += (rp.targetX - rp.currX) * Math.min(1, dt * 14);
+        rp.currY += (rp.targetY - rp.currY) * Math.min(1, dt * 14);
+        rp.x = rp.currX;
+        rp.y = rp.currY;
+        const dyaw = angleDiff(rp.targetYaw, rp.currYaw);
+        rp.currYaw += dyaw * Math.min(1, dt * 14);
+        rp.yaw = rp.currYaw;
+      }
+    }
+  }
+
+  function tick(now, dt) {
     if (!active || game.state === 'menu') return;
+    updateRemotePlayersInterpolation(dt || 0.016);
     if (now - lastSendTime < TICK_INTERVAL) return;
     lastSendTime = now;
 
@@ -550,6 +596,7 @@ const Multiplayer = (() => {
           x: b.x, y: b.y, team: b.team || 't', hp: b.hp, alive: b.alive,
           aim: b.aim, shootPose: b.shootPose, weapon: b.weapon, name: b.name
         })),
+        droppedWeapons: (typeof droppedWeapons !== 'undefined') ? droppedWeapons : [],
         bomb: {
           x: bomb.x, y: bomb.y, state: bomb.state,
           timer: bomb.timer, defuseProgress: bomb.defuseProgress
@@ -574,19 +621,57 @@ const Multiplayer = (() => {
 
   function handleClientTick(peerId, msg) {
     if (!msg || !msg.state) return;
-    remotePlayers.set(peerId, { id: peerId, ...msg.state });
+    let exist = remotePlayers.get(peerId);
+    if (!exist) {
+      remotePlayers.set(peerId, {
+        id: peerId,
+        ...msg.state,
+        targetX: msg.state.x, targetY: msg.state.y, targetYaw: msg.state.yaw,
+        currX: msg.state.x, currY: msg.state.y, currYaw: msg.state.yaw
+      });
+    } else {
+      Object.assign(exist, msg.state);
+      exist.targetX = msg.state.x;
+      exist.targetY = msg.state.y;
+      exist.targetYaw = msg.state.yaw;
+    }
   }
 
   function applyServerSnapshot(snap) {
     if (!snap) return;
 
-    // Actualizar jugadores remotos
+    // Actualizar jugadores remotos con interpolación
     if (snap.players) {
       for (const p of snap.players) {
         if (p.id !== (peer ? peer.id : '')) {
-          remotePlayers.set(p.id, p);
+          let exist = remotePlayers.get(p.id);
+          if (!exist) {
+            remotePlayers.set(p.id, {
+              ...p,
+              targetX: p.x, targetY: p.y, targetYaw: p.yaw,
+              currX: p.x, currY: p.y, currYaw: p.yaw
+            });
+          } else {
+            exist.name = p.name;
+            exist.team = p.team;
+            exist.hp = p.hp;
+            exist.alive = p.alive;
+            exist.weapon = p.weapon;
+            exist.pose = p.pose;
+            exist.z = p.z;
+            exist.defusing = p.defusing;
+            exist.planting = p.planting;
+            exist.targetX = p.x;
+            exist.targetY = p.y;
+            exist.targetYaw = p.yaw;
+          }
         }
       }
+    }
+
+    // Sincronizar armas caídas
+    if (snap.droppedWeapons && typeof droppedWeapons !== 'undefined') {
+      droppedWeapons = snap.droppedWeapons;
     }
 
     // Actualizar bots simulados por el host
@@ -689,6 +774,105 @@ const Multiplayer = (() => {
     }
   }
 
+  function handleClientShoot(peerId, msg) {
+    if (msg.shooterId !== (peer ? peer.id : 'host')) {
+      tracers.push({
+        x1: msg.x1, y1: msg.y1, z1: msg.z1,
+        x2: msg.x2, y2: msg.y2, z2: msg.z2,
+        life: 0.08, maxLife: 0.08, color: msg.color || '255,200,120', width: 1.2
+      });
+      const d = dist2D(player.x, player.y, msg.x1, msg.y1);
+      const rel = Math.atan2(msg.y1 - player.y, msg.x1 - player.x) - player.yaw;
+      sfxShot(msg.sound || 'rifle', clamp(Math.sin(rel), -1, 1), clamp(1 - d / 36, 0.2, 1) * 0.85);
+    }
+    const shootMsg = {
+      type: 'REMOTE_SHOOT',
+      shooterId: peerId,
+      x1: msg.x1, y1: msg.y1, z1: msg.z1,
+      x2: msg.x2, y2: msg.y2, z2: msg.z2,
+      sound: msg.sound || 'rifle'
+    };
+    for (const [id, conn] of connections) {
+      if (id !== peerId && conn.open) conn.send(shootMsg);
+    }
+  }
+
+  function handleClientHit(peerId, msg) {
+    if (msg.targetType === 'bot') {
+      const b = bots[msg.botIndex];
+      if (b && b.alive) {
+        damageBot(b, msg.dmg, msg.head, b.x, b.y, BOT_H * 0.7);
+        const conn = connections.get(peerId);
+        if (conn && conn.open) conn.send({ type: 'HIT_CONFIRM', head: msg.head });
+      }
+    } else {
+      applyDamageToPlayer(msg.targetId, msg.dmg, msg.head, msg.shooterName);
+      const conn = connections.get(peerId);
+      if (conn && conn.open) conn.send({ type: 'HIT_CONFIRM', head: msg.head });
+    }
+  }
+
+  function handleClientDefuse(peerId, msg) {
+    if (bomb.state === 'planted') {
+      bomb.defuseProgress = msg.progress;
+      if (bomb.defuseProgress >= 1) {
+        bomb.state = 'defused';
+        endRound(true, 'C4 desactivado por ' + (msg.name || 'un aliado'));
+      }
+    }
+  }
+
+  function handleClientPlant(peerId, msg) {
+    if (bomb.state !== 'planted') {
+      plantBomb({ x: msg.x, y: msg.y });
+    }
+  }
+
+  function sendPlant(x, y) {
+    if (!active) return;
+    if (isHost) {
+      plantBomb({ x, y });
+    } else if (hostConn && hostConn.open) {
+      hostConn.send({
+        type: 'CLIENT_PLANT',
+        x, y
+      });
+    }
+  }
+
+  function sendDefuse(progress, name) {
+    if (!active) return;
+    if (hostConn && hostConn.open) {
+      hostConn.send({
+        type: 'CLIENT_DEFUSE',
+        progress,
+        name: name || player.name
+      });
+    }
+  }
+
+  function broadcastRoundOver(ctWin, reason) {
+    if (!isHost) return;
+    const msg = { type: 'ROUND_OVER', ctWin, reason };
+    for (const [id, conn] of connections) {
+      if (conn.open) conn.send(msg);
+    }
+  }
+
+  function nextMultiplayerRound() {
+    if (!isHost) return;
+    setupMultiplayerRound();
+    const msg = {
+      type: 'ROUND_NEXT',
+      round: game.round,
+      ctScore: game.ctScore,
+      tScore: game.tScore
+    };
+    for (const [id, conn] of connections) {
+      if (conn.open) conn.send(msg);
+    }
+  }
+
   /* ---------------------------------------------------------------------
      LIMPIEZA / SALIR DE SALA
      --------------------------------------------------------------------- */
@@ -788,6 +972,37 @@ const Multiplayer = (() => {
   /* ---------------------------------------------------------------------
      INICIALIZACIÓN AL ABRIR PÁGINA
      --------------------------------------------------------------------- */
+  function sendChat(text) {
+    text = (text || '').trim();
+    if (!text) return;
+    const msg = {
+      type: 'CHAT_MSG',
+      sender: player.name || 'OPERADOR',
+      team: player.team || 'ct',
+      text: text.slice(0, 80)
+    };
+    if (typeof addChatMessage === 'function') addChatMessage(msg.sender, msg.team, msg.text);
+    if (isHost) {
+      for (const [id, conn] of connections) {
+        if (conn.open) conn.send(msg);
+      }
+    } else if (hostConn && hostConn.open) {
+      hostConn.send(msg);
+    }
+  }
+
+  function sendDropWeapon(id, x, y, mag, reserve) {
+    if (!active) return;
+    const msg = { type: 'DROP_WEAPON', id, x, y, mag, reserve };
+    if (isHost) {
+      for (const [idConn, conn] of connections) {
+        if (conn.open) conn.send(msg);
+      }
+    } else if (hostConn && hostConn.open) {
+      hostConn.send(msg);
+    }
+  }
+
   function checkUrlForRoom() {
     const params = new URLSearchParams(window.location.search);
     const roomParam = params.get('room');
@@ -805,6 +1020,7 @@ const Multiplayer = (() => {
     get roomCode() { return roomCode; },
     get fillBots() { return fillBots; },
     set fillBots(v) { fillBots = !!v; },
+    get remotePlayers() { return remotePlayers; },
     createRoom,
     joinRoom,
     leaveRoom,
@@ -813,6 +1029,13 @@ const Multiplayer = (() => {
     tick,
     sendShoot,
     sendHit,
+    sendPlant,
+    sendDefuse,
+    sendChat,
+    sendDropWeapon,
+    broadcastRoundOver,
+    nextMultiplayerRound,
+    applyDamageToPlayer,
     getRemotePlayers: () => Array.from(remotePlayers.values()),
     getShareUrl,
     checkUrlForRoom,

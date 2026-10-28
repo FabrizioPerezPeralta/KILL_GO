@@ -742,6 +742,55 @@ const CORPSE_SPRITES = [0, 1].map(v =>
 );
 const BOMB_SPRITE = buildSpriteLUT(spriteFromCanvas(40, 40, drawBomb));
 
+function drawDroppedGunSprite(g, id) {
+  g.clearRect(0, 0, 48, 24);
+  // Sombra en el suelo
+  g.fillStyle = 'rgba(0,0,0,0.32)';
+  g.beginPath();
+  g.ellipse(24, 20, 15, 2.5, 0, 0, TAU);
+  g.fill();
+
+  // Resplandor dorado tenue
+  g.fillStyle = 'rgba(242,163,58,0.22)';
+  g.beginPath();
+  g.ellipse(24, 11, 18, 6, 0, 0, TAU);
+  g.fill();
+
+  g.save();
+  g.translate(24, 11);
+  g.scale(0.38, 0.38);
+  if (id === 'ak') {
+    fillRR(g, -26, -5, 52, 9, 2, '#222525', '#000');
+    fillRR(g, 16, -3, 20, 10, 2, '#874b24', '#000');
+    fillRR(g, -16, -4, 18, 7, 2, '#874b24', '#000');
+    fillRR(g, -36, -3, 14, 4, 1, '#111', '#000');
+    fillRR(g, -2, 4, 10, 14, 2, '#965c26', '#000');
+  } else if (id === 'm4') {
+    fillRR(g, -24, -5, 50, 9, 2, '#262a2a', '#000');
+    fillRR(g, 14, -4, 18, 9, 2, '#1b1d1d', '#000');
+    fillRR(g, -38, -3, 16, 6, 2, '#1b1d1d', '#000');
+    fillRR(g, -2, 4, 8, 12, 2, '#181a1a', '#000');
+  } else if (id === 'awp') {
+    fillRR(g, -30, -4, 62, 8, 2, '#3c4837', '#000');
+    fillRR(g, 18, -4, 22, 10, 2, '#485743', '#000');
+    fillRR(g, -48, -2, 20, 4, 1, '#1e241c', '#000');
+    fillRR(g, -8, -11, 26, 6, 2, '#181d16', '#000');
+  } else if (id === 'mp5') {
+    fillRR(g, -18, -5, 38, 9, 2, '#282b2d', '#000');
+    fillRR(g, -30, -3, 14, 7, 2, '#181a1b', '#000');
+    fillRR(g, 2, 4, 6, 15, 2, '#151717', '#000');
+  } else {
+    fillRR(g, -14, -5, 28, 9, 2, '#7a8183', '#000');
+    fillRR(g, 4, 2, 8, 12, 2, '#222', '#000');
+  }
+  g.restore();
+}
+
+const DROPPED_WEAPON_SPRITES = {};
+['ak', 'm4', 'awp', 'mp5', 'deagle'].forEach(id => {
+  DROPPED_WEAPON_SPRITES[id] = buildSpriteLUT(spriteFromCanvas(48, 24, g => drawDroppedGunSprite(g, id)));
+});
+
 /* Tamaños en unidades del mundo */
 const BOT_H = 0.82;
 const BOT_W = BOT_H * 64 / 96;
@@ -749,3 +798,5 @@ const CORPSE_H = 0.26;
 const CORPSE_W = CORPSE_H * 96 / 32;
 const BOMB_H = 0.24;
 const BOMB_W = 0.24;
+const WEAPON_DROP_H = 0.18;
+const WEAPON_DROP_W = 0.36;

@@ -9,6 +9,10 @@ const WEAPONS = {
     id: 'usp', name: 'USP-S', slot: 2, dmg: 26, hs: 3.4, rpm: 400, mag: 12, reserve: 36,
     auto: false, spread: 0.0065, moveSpread: 0.022, kick: 0.010, reload: 2.2, sound: 'pistol'
   },
+  glock: {
+    id: 'glock', name: 'GLOCK-18', slot: 2, dmg: 24, hs: 2.9, rpm: 460, mag: 20, reserve: 60,
+    auto: false, spread: 0.008, moveSpread: 0.024, kick: 0.009, reload: 2.1, sound: 'pistol'
+  },
   deagle: {
     id: 'deagle', name: 'DESERT EAGLE', slot: 2, dmg: 60, hs: 3.0, rpm: 240, mag: 7, reserve: 35,
     auto: false, spread: 0.012, moveSpread: 0.032, kick: 0.028, reload: 2.4, sound: 'pistol'
@@ -20,6 +24,10 @@ const WEAPONS = {
   m4: {
     id: 'm4', name: 'M4A1-S', slot: 1, dmg: 34, hs: 3.1, rpm: 600, mag: 30, reserve: 90,
     auto: true, spread: 0.011, moveSpread: 0.028, kick: 0.009, reload: 3.1, sound: 'rifle'
+  },
+  ak: {
+    id: 'ak', name: 'AK-47', slot: 1, dmg: 38, hs: 3.6, rpm: 600, mag: 30, reserve: 90,
+    auto: true, spread: 0.013, moveSpread: 0.030, kick: 0.013, reload: 2.9, sound: 'rifle'
   },
   awp: {
     id: 'awp', name: 'AWP', slot: 1, dmg: 122, hs: 2.0, rpm: 41, mag: 10, reserve: 30,
@@ -53,6 +61,7 @@ const MAX_MONEY = 16000;
 const game = {
   state: 'menu',
   difficulty: 'normal',
+  crosshairColor: 'green',
   round: 0,
   ctScore: 0,
   tScore: 0,
@@ -72,6 +81,7 @@ const game = {
   roundReward: 0,
   siteClearShown: false,
   muted: false,
+  volume: 0.5,
   started: false
 };
 
@@ -102,6 +112,7 @@ let bots = [];
 let corpses = [];
 let particles = [];
 let tracers = [];
+let droppedWeapons = [];
 
 const bomb = {
   state: 'carried',
@@ -196,7 +207,8 @@ function ensureAudio() {
     if (!Ctx) return;
     AC = new Ctx();
     master = AC.createGain();
-    master.gain.value = game.muted ? 0 : 0.5;
+    const savedVol = (typeof game !== 'undefined' && game.volume !== undefined) ? game.volume : 0.5;
+    master.gain.value = (typeof game !== 'undefined' && game.muted) ? 0 : savedVol;
     master.connect(AC.destination);
     noiseBuf = AC.createBuffer(1, Math.floor(AC.sampleRate * 1.6), AC.sampleRate);
     const d = noiseBuf.getChannelData(0);
@@ -292,10 +304,22 @@ function sfxReload() {
   noiseHit(0.12, 0.05, 900, 0, 'bandpass', 0.5);
   noiseHit(0.10, 0.05, 1200, 0, 'bandpass', 1.15);
 }
-function sfxFootstep(vol) {
+function sfxFootstep(vol, surface) {
   ensureAudio();
   if (!AC || game.muted) return;
-  noiseHit(0.035 * vol, 0.07, 520, rand(-0.15, 0.15), 'highpass');
+  vol = vol || 1;
+  if (surface === 'wood') {
+    tone(140, 0.05, 'sine', 0.05 * vol, rand(-0.15, 0.15), 80);
+    noiseHit(0.04 * vol, 0.05, 360, rand(-0.15, 0.15), 'lowpass');
+  } else if (surface === 'metal') {
+    noiseHit(0.045 * vol, 0.07, 1400, rand(-0.15, 0.15), 'bandpass');
+    tone(680, 0.035, 'square', 0.025 * vol, rand(-0.15, 0.15), 450);
+  } else if (surface === 'concrete') {
+    noiseHit(0.04 * vol, 0.06, 680, rand(-0.15, 0.15), 'highpass');
+  } else {
+    // arena (por defecto)
+    noiseHit(0.035 * vol, 0.07, 460, rand(-0.15, 0.15), 'highpass');
+  }
 }
 function sfxHurt() {
   ensureAudio();
@@ -320,6 +344,7 @@ function sfxBoom() {
   noiseHit(0.9, 1.3, 600, 0, 'lowpass');
   tone(60, 1.1, 'sine', 0.55, 0, 24);
   noiseHit(0.4, 0.4, 2400, 0, 'highpass', 0.02);
+  tone(3400, 2.6, 'sine', 0.08 * (game.volume || 0.5), 0, 1600, 0.06);
 }
 function sfxBuy() {
   ensureAudio();
@@ -367,10 +392,73 @@ function sfxSwing() {
   noiseHit(0.12, 0.12, 1200, 0, 'bandpass');
 }
 function sfxScope() { ensureAudio(); noiseHit(0.08, 0.05, 900, 0, 'bandpass'); }
+
+function sfxRadioBeep() {
+  ensureAudio();
+  if (!AC || game.muted) return;
+  noiseHit(0.06, 0.04, 1800, 0, 'bandpass');
+  tone(880, 0.03, 'square', 0.03, 0, 880);
+}
+
+function radioAnnounce(phrase) {
+  sfxRadioBeep();
+  if ('speechSynthesis' in window && !game.muted) {
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(phrase);
+      u.rate = 1.05;
+      u.pitch = 0.95;
+      u.volume = clamp((game.volume !== undefined ? game.volume : 0.5) * 1.2, 0, 1);
+      u.lang = 'en-US';
+      window.speechSynthesis.speak(u);
+    } catch (e) {}
+  }
+}
+
+function setMasterVolume(v) {
+  game.volume = clamp(parseFloat(v) !== undefined && !isNaN(parseFloat(v)) ? parseFloat(v) : 0.5, 0, 1);
+  if (master) {
+    master.gain.value = game.muted ? 0 : game.volume;
+  }
+}
+
 function toggleMute() {
   game.muted = !game.muted;
-  if (master) master.gain.value = game.muted ? 0 : 0.5;
+  if (master) master.gain.value = game.muted ? 0 : (game.volume !== undefined ? game.volume : 0.5);
   banner(game.muted ? 'SONIDO SILENCIADO' : 'SONIDO ACTIVADO', 'Pulsa M para cambiar', '', 1.4);
+}
+
+function dropCurrentWeapon() {
+  if (game.state !== 'live' || !player.alive) return;
+  const gun = player.slots[1];
+  if (!gun) {
+    toast('NO TIENES ARMA PRIMARIA PARA SOLTAR');
+    return;
+  }
+  const def = WEAPONS[gun.id];
+  if (!def) return;
+
+  const dropX = player.x + Math.cos(player.yaw) * 0.7;
+  const dropY = player.y + Math.sin(player.yaw) * 0.7;
+  const finalX = isSolidAt(dropX, dropY) ? player.x : dropX;
+  const finalY = isSolidAt(dropX, dropY) ? player.y : dropY;
+
+  droppedWeapons.push({
+    id: gun.id,
+    x: finalX,
+    y: finalY,
+    mag: gun.mag,
+    reserve: gun.reserve,
+    bobPhase: Math.random() * 6.28
+  });
+
+  player.slots[1] = null;
+  selectSlot(player.slots[2] ? 2 : 3);
+  sfxSwitch();
+  toast('ARMA SOLTADA: ' + def.name);
+  if (window.Multiplayer && Multiplayer.active) {
+    Multiplayer.sendDropWeapon(gun.id, finalX, finalY, gun.mag, gun.reserve);
+  }
 }
 
 /* ---------------------------------------------------------------------
@@ -486,7 +574,8 @@ function startMatch() {
   player.kills = 0; player.deaths = 0; player.headshots = 0;
   player.shots = 0; player.hitsShots = 0;
   player.kit = false;
-  player.slots = { 1: null, 2: gunObj('usp'), 3: { id: 'knife', mag: 0, reserve: 0 } };
+  const startingPistol = player.team === 't' ? 'glock' : 'usp';
+  player.slots = { 1: null, 2: gunObj(startingPistol), 3: { id: 'knife', mag: 0, reserve: 0 } };
   player.slot = 2;
   hideAllScreens();
   ui.hud.classList.remove('hidden');
@@ -531,6 +620,9 @@ function nextRound() {
   player.flashTimer = 0; player.viewKick = 0;
   player.bob = 0; player.stepDist = 0;
   player.defusing = false;
+  player.planting = false;
+  const startingPistol = player.team === 't' ? 'glock' : 'usp';
+  if (!player.slots[2]) player.slots[2] = gunObj(startingPistol);
   player.slot = player.slots[1] ? 1 : 2;
   refillAmmo();
 
@@ -538,7 +630,9 @@ function nextRound() {
   corpses = [];
   particles = [];
   tracers = [];
+  droppedWeapons = [];
   ui.killfeed.innerHTML = '';
+  Array.from(document.querySelectorAll('.plant-warning')).forEach(el => el.remove());
   spawnBotsForRound();
   resetBomb();
 
@@ -553,7 +647,8 @@ function beginLive() {
   game.buyExpired = true;
   ui.buy.classList.add('hidden');
   ui.hud.classList.remove('hidden');
-  banner('¡ADELANTE!', 'Protege el sitio A', '', 1.6);
+  const msgSub = player.team === 't' ? 'Asalta el sitio A y planta el C4' : 'Protege el sitio A';
+  banner('¡ADELANTE!', msgSub, '', 1.6);
   sfxRoundStart();
   tryLockPointer();
   updateHUD();
@@ -564,10 +659,12 @@ function endRound(ctWin, reason) {
   game.state = 'roundover';
   game.lastResult = { ctWin, reason };
   if (ctWin) game.ctScore++; else game.tScore++;
-  const reward = ctWin ? 3000 : 1900;
+  const playerWon = (player.team === 'ct' && ctWin) || (player.team === 't' && !ctWin);
+  const reward = playerWon ? 3000 : 1900;
   game.roundReward = reward;
   player.money = Math.min(MAX_MONEY, player.money + reward);
   player.defusing = false;
+  player.planting = false;
   player.scope = false;
   mouseDown = false;
   if (game.ctScore >= TARGET_SCORE || game.tScore >= TARGET_SCORE) game.matchOver = true;
@@ -575,8 +672,32 @@ function endRound(ctWin, reason) {
   game.roundOverShown = false;
   if (document.pointerLockElement) document.exitPointerLock();
   ui.lockHint.classList.add('hidden');
-  sfxRoundEnd(ctWin);
+  Array.from(document.querySelectorAll('.plant-warning')).forEach(el => el.remove());
+  sfxRoundEnd(playerWon);
+  if (ctWin) {
+    if (bomb.state === 'defused' || (reason && reason.toLowerCase().includes('desactivado'))) {
+      radioAnnounce('Bomb defused. Counter-Terrorists win');
+    } else {
+      radioAnnounce('Counter-Terrorists win');
+    }
+  } else {
+    if (bomb.state === 'exploded' || (reason && reason.toLowerCase().includes('explotado'))) {
+      radioAnnounce('Target destroyed. Terrorists win');
+    } else {
+      radioAnnounce('Terrorists win');
+    }
+  }
+  if (window.careerStats) {
+    careerStats.recordRound(playerWon);
+    if (game.matchOver) {
+      careerStats.recordMatch((player.team === 'ct' && game.ctScore > game.tScore) || (player.team === 't' && game.tScore > game.ctScore));
+    }
+  }
   updateHUD();
+
+  if (window.Multiplayer && Multiplayer.active && Multiplayer.isHost) {
+    Multiplayer.broadcastRoundOver(ctWin, reason);
+  }
 }
 
 function advanceRound() {
@@ -584,19 +705,59 @@ function advanceRound() {
   if (game.matchOver) {
     showGameOver();
   } else {
-    nextRound();
+    if (window.Multiplayer && Multiplayer.active) {
+      if (Multiplayer.isHost) {
+        Multiplayer.nextMultiplayerRound();
+      }
+    } else {
+      nextRound();
+    }
   }
 }
 
 function checkRoundState() {
   if (game.state !== 'live') return;
-  const allDead = bots.length > 0 && bots.every(b => !b.alive);
-  if (allDead && bomb.state !== 'planted') {
-    endRound(true, 'Todos los terroristas eliminados');
+  let aliveCT = 0;
+  let aliveT = 0;
+
+  if (player.alive) {
+    if (player.team === 'ct') aliveCT++;
+    else aliveT++;
+  }
+
+  for (const b of bots) {
+    if (b.alive) {
+      if (b.team === 'ct') aliveCT++;
+      else aliveT++;
+    }
+  }
+
+  if (window.Multiplayer && Multiplayer.active) {
+    for (const rp of Multiplayer.getRemotePlayers()) {
+      if (rp.alive) {
+        if (rp.team === 'ct') aliveCT++;
+        else aliveT++;
+      }
+    }
+  }
+
+  // 1. Terroristas eliminados y C4 no plantado -> Gana CT
+  if (aliveT === 0 && bomb.state !== 'planted') {
+    endRound(true, 'Todos los terroristas han sido neutralizados');
     return;
   }
-  if (allDead && bomb.state === 'planted' && !game.siteClearShown) {
+  // 2. Antiterroristas eliminados y C4 no desactivado -> Gana T
+  if (aliveCT === 0 && bomb.state !== 'defused') {
+    endRound(false, 'Fuerzas antiterroristas eliminadas');
+    return;
+  }
+  // 3. Terroristas eliminados pero C4 plantado -> aviso al jugador
+  if (aliveT === 0 && bomb.state === 'planted' && !game.siteClearShown) {
     game.siteClearShown = true;
-    banner('SITIO DESPEJADO', 'Desactiva el C4 o explotará', 'warn', 2.2);
+    if (player.team === 'ct') {
+      banner('SITIO DESPEJADO', 'Desactiva el C4 o explotará', 'warn', 2.2);
+    } else {
+      banner('EQUIPO CAÍDO', 'Defiende el C4 hasta la detonación', 'warn', 2.2);
+    }
   }
 }

@@ -51,6 +51,7 @@ const Renderer = (() => {
     return packRGB(r | 0, g | 0, b | 0);
   }
 
+  const camObj = { scoped: false, planeLen: 0, yaw: 0, pitch: 0, dirX: 0, dirY: 0, planeX: 0, planeY: 0, f: 0, eye: 0, horizon: 0, invDet: 0 };
   function getCam() {
     const scoped = player.scope && player.alive;
     const hfov = scoped ? hfovScope : hfovNormal;
@@ -63,7 +64,19 @@ const Renderer = (() => {
     const f = (W / 2) / planeLen;
     const eye = getEyeHeight();
     const horizon = H / 2 + Math.tan(pitch) * f;
-    return { scoped, planeLen, yaw, pitch, dirX, dirY, planeX, planeY, f, eye, horizon, invDet: -1 / planeLen };
+    camObj.scoped = scoped;
+    camObj.planeLen = planeLen;
+    camObj.yaw = yaw;
+    camObj.pitch = pitch;
+    camObj.dirX = dirX;
+    camObj.dirY = dirY;
+    camObj.planeX = planeX;
+    camObj.planeY = planeY;
+    camObj.f = f;
+    camObj.eye = eye;
+    camObj.horizon = horizon;
+    camObj.invDet = -1 / planeLen;
+    return camObj;
   }
 
   function renderWorld(cam) {
@@ -253,6 +266,15 @@ const Renderer = (() => {
     for (const c of corpses) {
       addSprite(list, CORPSE_SPRITES[c.variant], c.x, c.y, CORPSE_H, CORPSE_W, 0);
     }
+    if (typeof droppedWeapons !== 'undefined') {
+      for (const dw of droppedWeapons) {
+        const sprite = DROPPED_WEAPON_SPRITES[dw.id] || DROPPED_WEAPON_SPRITES.ak;
+        if (sprite) {
+          const bob = Math.sin(game.time * 2.8 + (dw.bobPhase || 0)) * 0.015;
+          addSprite(list, sprite, dw.x, dw.y, WEAPON_DROP_H, WEAPON_DROP_W, 0.04 + bob);
+        }
+      }
+    }
     if (bomb.state === 'planted' || bomb.state === 'dropped') {
       addSprite(list, BOMB_SPRITE, bomb.x, bomb.y, BOMB_H, BOMB_W, 0);
     }
@@ -373,6 +395,32 @@ const Renderer = (() => {
       }
       ctx.restore();
     }
+
+    // Etiquetas de armas en el suelo
+    if (typeof droppedWeapons !== 'undefined' && droppedWeapons.length > 0) {
+      ctx.save();
+      ctx.font = 'bold 9px monospace';
+      ctx.textAlign = 'center';
+      for (const dw of droppedWeapons) {
+        const d = dist2D(player.x, player.y, dw.x, dw.y);
+        if (d > 4.5) continue;
+        const pr = project(dw.x, dw.y, 0.28, cam);
+        if (!pr) continue;
+        const zx = clamp(pr.x | 0, 0, W - 1);
+        if (zbuf[zx] < pr.depth * 0.95) continue;
+        const px = pr.x * scale, py = pr.y * scale;
+        const wDef = WEAPONS[dw.id];
+        const name = wDef ? wDef.name : 'ARMA';
+        ctx.fillStyle = 'rgba(10,12,10,0.72)';
+        ctx.fillRect(px - 36, py - 12, 72, 15);
+        ctx.strokeStyle = 'rgba(242,163,58,0.5)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(px - 36, py - 12, 72, 15);
+        ctx.fillStyle = '#ffd9a0';
+        ctx.fillText(name, px, py - 1);
+      }
+      ctx.restore();
+    }
   }
 
   /* ---------------- armas (viewmodel) ---------------- */
@@ -433,6 +481,19 @@ const Renderer = (() => {
       muzzle(c, -2, -130, s, flash * .6);
       return;
     }
+    if (def.id === 'glock') {
+      fillRound(c, -114, -46, 88, 20, 3, '#1c1f1f', '#070808');
+      c.fillStyle = 'rgba(255,255,255,.12)'; c.fillRect(-108, -43, 76, 2);
+      fillRound(c, -54, -42, 64, 24, 3, '#2a2d2d', '#070808');
+      fillRound(c, -46, -18, 54, 16, 3, '#181919', '#070808');
+      c.save(); c.translate(8, -12); c.rotate(1.28);
+      fillRound(c, 0, 0, 24, 58, 6, '#181919', '#070808');
+      c.restore();
+      drawHand(c, 20, 10, 34, 0.18, true);
+      drawHand(c, 2, 2, 30, -0.1, true);
+      muzzle(c, -115, -36, s, flash);
+      return;
+    }
     if (def.id === 'usp' || def.id === 'deagle') {
       const big = def.id === 'deagle';
       const silver = big ? '#6b6f70' : '#2f3333';
@@ -480,6 +541,29 @@ const Renderer = (() => {
       drawHand(c, -74, 2, 32, -0.15, true);
       drawHand(c, 28, 18, 34, 0.22, true);
       muzzle(c, -167, -24, s, flash);
+      return;
+    }
+    if (def.id === 'ak') {
+      // culata
+      fillRound(c, 90, -22, 54, 34, 5, '#874b24', '#080909');
+      fillRound(c, 134, -18, 20, 28, 4, '#6b3716', '#080909');
+      // cajón
+      fillRound(c, 20, -24, 84, 36, 5, '#222525', '#080909');
+      // guardamanos
+      fillRound(c, -88, -26, 70, 22, 4, '#874b24', '#080909');
+      fillRound(c, -84, -22, 62, 16, 3, '#a05c30', '#080909');
+      // cañón
+      fillRound(c, -156, -30, 80, 11, 3, '#181a1a', '#060707');
+      fillRound(c, -168, -32, 16, 15, 3, '#222525', '#060707');
+      // cargador curvo
+      c.save(); c.translate(8, -2); c.rotate(0.32);
+      fillRound(c, 0, 0, 26, 58, 5, '#965c26', '#080909');
+      c.fillStyle = 'rgba(0,0,0,.3)'; c.fillRect(4, 6, 5, 44);
+      c.restore();
+      // manos
+      drawHand(c, -64, 4, 30, -0.2, true);
+      drawHand(c, 50, 16, 34, 0.24, true);
+      muzzle(c, -170, -24, s, flash);
       return;
     }
     // M4A1-S
@@ -571,7 +655,13 @@ const Renderer = (() => {
     const gap = 5 + spread;
     const len = 8;
     const x = cw / 2, y = ch / 2;
-    const col = 'rgba(110,255,140,.92)';
+    const colorMap = {
+      green: 'rgba(110,255,140,.92)',
+      cyan: 'rgba(80,220,255,.92)',
+      yellow: 'rgba(255,225,80,.92)',
+      red: 'rgba(255,80,80,.92)'
+    };
+    const col = colorMap[game.crosshairColor] || colorMap.green;
     ctx.save();
     ctx.lineCap = 'butt';
     ctx.strokeStyle = 'rgba(0,0,0,.55)';
@@ -695,7 +785,19 @@ function drawWeaponIcon(canvas, id) {
   grad.addColorStop(1, 'rgba(160,145,115,.7)');
   g.strokeStyle = 'rgba(0,0,0,.35)';
   g.lineWidth = 2;
-  if (id === 'm4') {
+  if (id === 'ak') {
+    g.fillStyle = grad;
+    g.beginPath();
+    g.moveTo(-108, -10); g.lineTo(58, -12); g.lineTo(90, -18); g.lineTo(96, 4);
+    g.lineTo(74, 8); g.lineTo(58, 20); g.lineTo(42, 20); g.lineTo(36, 8);
+    g.lineTo(-8, 8); g.lineTo(-22, 32); g.lineTo(-42, 32); g.lineTo(-30, 8);
+    g.lineTo(-108, 4); g.closePath(); g.fill(); g.stroke();
+    g.fillStyle = 'rgba(130,65,28,.95)';
+    g.fillRect(-100, -8, 22, 10);
+    g.fillRect(48, -10, 42, 16);
+    g.fillStyle = 'rgba(50,50,45,.95)';
+    g.fillRect(-22, 8, 16, 24);
+  } else if (id === 'm4') {
     g.fillStyle = grad;
     g.beginPath();
     g.moveTo(-100, -10); g.lineTo(60, -14); g.lineTo(80, -8); g.lineTo(92, -8);

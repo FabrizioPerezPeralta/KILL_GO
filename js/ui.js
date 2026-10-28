@@ -50,6 +50,54 @@ function safeSetStorage(key, val) {
 game.sens = parseFloat(safeGetStorage('dust_sens', '2.2')) || 2.2;
 game.difficulty = safeGetStorage('dust_diff', 'normal');
 if (!DIFF[game.difficulty]) game.difficulty = 'normal';
+game.crosshairColor = safeGetStorage('dust_crosshair', 'green');
+
+const careerStats = {
+  get roundsWon() { return parseInt(safeGetStorage('dust_stat_rw', '0'), 10) || 0; },
+  get matchesWon() { return parseInt(safeGetStorage('dust_stat_mw', '0'), 10) || 0; },
+  get kills() { return parseInt(safeGetStorage('dust_stat_k', '0'), 10) || 0; },
+  get deaths() { return parseInt(safeGetStorage('dust_stat_d', '0'), 10) || 0; },
+  get headshots() { return parseInt(safeGetStorage('dust_stat_hs', '0'), 10) || 0; },
+  get shots() { return parseInt(safeGetStorage('dust_stat_sh', '0'), 10) || 0; },
+  get hits() { return parseInt(safeGetStorage('dust_stat_h', '0'), 10) || 0; },
+  recordKill(head) {
+    safeSetStorage('dust_stat_k', this.kills + 1);
+    if (head) safeSetStorage('dust_stat_hs', this.headshots + 1);
+    updateCareerUI();
+  },
+  recordDeath() {
+    safeSetStorage('dust_stat_d', this.deaths + 1);
+    updateCareerUI();
+  },
+  recordShot(hit) {
+    safeSetStorage('dust_stat_sh', this.shots + 1);
+    if (hit) safeSetStorage('dust_stat_h', this.hits + 1);
+    updateCareerUI();
+  },
+  recordRound(won) {
+    if (won) safeSetStorage('dust_stat_rw', this.roundsWon + 1);
+    updateCareerUI();
+  },
+  recordMatch(won) {
+    if (won) safeSetStorage('dust_stat_mw', this.matchesWon + 1);
+    updateCareerUI();
+  }
+};
+window.careerStats = careerStats;
+
+function updateCareerUI() {
+  const k = careerStats.kills;
+  const d = careerStats.deaths;
+  const hs = careerStats.headshots;
+  const kd = (k / Math.max(1, d)).toFixed(2);
+  const hsPct = k > 0 ? Math.round((hs / k) * 100) + '%' : '0%';
+  const mw = careerStats.matchesWon;
+
+  if ($('statKd')) $('statKd').textContent = kd;
+  if ($('statKills')) $('statKills').textContent = k;
+  if ($('statHs')) $('statHs').textContent = hsPct;
+  if ($('statWins')) $('statWins').textContent = mw;
+}
 
 const keys = Object.create(null);
 let mouseDown = false;
@@ -78,9 +126,10 @@ function showRoundOverUI() {
   if (game.state !== 'roundover' || game.roundOverShown) return;
   game.roundOverShown = true;
   const res = game.lastResult || { ctWin: false, reason: '' };
+  const playerWon = (player.team === 'ct' && res.ctWin) || (player.team === 't' && !res.ctWin);
   ui.roKicker.textContent = `RONDA ${game.round} FINALIZADA · CT ${game.ctScore} — ${game.tScore} T`;
-  ui.roTitle.textContent = res.ctWin ? 'RONDA GANADA' : 'RONDA PERDIDA';
-  ui.roTitle.style.color = res.ctWin ? '#8cf0a2' : '#ff7a68';
+  ui.roTitle.textContent = playerWon ? 'RONDA GANADA' : 'RONDA PERDIDA';
+  ui.roTitle.style.color = playerWon ? '#8cf0a2' : '#ff7a68';
   ui.roReason.textContent = res.reason;
   ui.roScore.textContent = `CT ${game.ctScore} — ${game.tScore} T`;
   ui.roReward.textContent = `+$${game.roundReward}`;
@@ -94,13 +143,13 @@ function showGameOver() {
   hideAllScreens();
   ui.hud.classList.add('hidden');
   ui.gameOver.classList.remove('hidden');
-  const win = game.ctScore > game.tScore;
+  const win = (player.team === 'ct' && game.ctScore > game.tScore) || (player.team === 't' && game.tScore > game.ctScore);
   ui.goKicker.textContent = win ? 'OPERACIÓN COMPLETADA' : 'OPERACIÓN FALLIDA';
   ui.goTitle.textContent = win ? 'VICTORIA' : 'DERROTA';
   ui.goTitle.style.color = win ? '#8cf0a2' : '#ff7a68';
   ui.goSub.textContent = win
-    ? 'El sitio A ha resistido. Los terroristas se retiran y la operación es un éxito.'
-    : 'Los terroristas han completado su objetivo. El sitio A está perdido.';
+    ? (player.team === 't' ? 'Los terroristas han dominado el sitio A con éxito.' : 'El sitio A ha resistido. Los terroristas se retiran y la operación es un éxito.')
+    : (player.team === 't' ? 'Las fuerzas de seguridad han repelido el asalto terrorista.' : 'Los terroristas han completado su objetivo. El sitio A está perdido.');
   ui.goScore.textContent = `${game.ctScore} — ${game.tScore}`;
   ui.goKills.textContent = player.kills;
   ui.goHS.textContent = player.headshots;
@@ -181,9 +230,15 @@ const SHOP = [
   },
   {
     id: 'm4', icon: 'm4', name: 'M4A1-S', price: 3100,
-    desc: 'Rifle de asalto · automático · 34 daño',
+    desc: 'Rifle de asalto CT · silenciado · 34 daño',
     owned: () => player.slots[1] && player.slots[1].id === 'm4',
     apply: () => { player.slots[1] = gunObj('m4'); player.slot = 1; }
+  },
+  {
+    id: 'ak', icon: 'ak', name: 'AK-47', price: 2700,
+    desc: 'Rifle de asalto T · alta potencia · 38 daño',
+    owned: () => player.slots[1] && player.slots[1].id === 'ak',
+    apply: () => { player.slots[1] = gunObj('ak'); player.slot = 1; }
   },
   {
     id: 'awp', icon: 'awp', name: 'AWP', price: 4750,
@@ -323,25 +378,49 @@ function updateHUD() {
   ui.bombStatus.classList.toggle('hidden', !showBomb);
   if (showBomb) setText(ui.bombTimer, Math.max(0, bomb.timer).toFixed(1));
 
-  // desactivación
-  const showDef = bomb.state === 'planted' && (bomb.defuseProgress > 0.001 || player.defusing);
-  ui.defuseWrap.classList.toggle('hidden', !showDef);
-  if (showDef) {
-    const pct = clamp(bomb.defuseProgress, 0, 1);
-    ui.defuseFill.style.width = (pct * 100) + '%';
-    setText(ui.defusePct, Math.floor(pct * 100) + '%');
+  // plantado o desactivación
+  const isPlanting = bomb.state === 'carried' && (bomb.plantProgress > 0.001 || player.planting);
+  const isDefusing = bomb.state === 'planted' && (bomb.defuseProgress > 0.001 || player.defusing);
+  const showBar = (isPlanting || isDefusing) && game.state !== 'menu';
+  ui.defuseWrap.classList.toggle('hidden', !showBar);
+  if (showBar) {
+    if (isPlanting) {
+      const pct = clamp(bomb.plantProgress / 3.2, 0, 1);
+      ui.defuseFill.style.width = (pct * 100) + '%';
+      ui.defuseFill.style.background = 'linear-gradient(90deg, #ff7a68, #ffb267)';
+      ui.defuseLabel.innerHTML = `PLANTANDO C4 <span id="defusePct">${Math.floor(pct * 100)}%</span>`;
+    } else {
+      const pct = clamp(bomb.defuseProgress, 0, 1);
+      ui.defuseFill.style.width = (pct * 100) + '%';
+      ui.defuseFill.style.background = 'linear-gradient(90deg, #4fc3ff, #9ef0ff)';
+      ui.defuseLabel.innerHTML = `DESACTIVANDO C4 <span id="defusePct">${Math.floor(pct * 100)}%</span>`;
+    }
   }
 
   // prompts
   let prompt = '';
   if (game.state === 'live' && player.alive) {
-    if (bomb.state === 'planted') {
-      const d = dist2D(player.x, player.y, bomb.x, bomb.y);
-      const still = Math.hypot(player.vx, player.vy) < 0.7;
-      if (d < 1.75 && still) {
-        prompt = `MANTÉN [E] PARA DESACTIVAR · ${player.kit ? 'KIT 5s' : '10s'}`;
-      } else if (d < 4.5) {
-        prompt = 'ACÉRCATE AL C4 Y MANTÉN [E] SIN MOVERTE';
+    if (player.team === 'ct') {
+      if (bomb.state === 'planted') {
+        const d = dist2D(player.x, player.y, bomb.x, bomb.y);
+        const still = Math.hypot(player.vx, player.vy) < 0.7;
+        if (d < 1.75 && still) {
+          prompt = `MANTÉN [E] PARA DESACTIVAR · ${player.kit ? 'KIT 5s' : '10s'}`;
+        } else if (d < 4.5) {
+          prompt = 'ACÉRCATE AL C4 Y MANTÉN [E] SIN MOVERTE';
+        }
+      }
+    } else if (player.team === 't') {
+      if (bomb.state === 'carried' && (bomb.carrier === player || player.hasBomb)) {
+        const inSite = dist2D(player.x, player.y, SITE_CENTER.x, SITE_CENTER.y) < 3.8;
+        if (inSite) {
+          prompt = 'MANTÉN [E] PARA PLANTAR EL C4';
+        } else {
+          prompt = 'LLEVA EL C4 AL SITIO A PARA PLANTAR';
+        }
+      } else if (bomb.state === 'dropped') {
+        const d = dist2D(player.x, player.y, bomb.x, bomb.y);
+        if (d < 3.0) prompt = 'ACÉRCATE AL C4 PARA RECOGERLO';
       }
     }
     if (!prompt) {
@@ -382,13 +461,96 @@ function updateHUD() {
   drawRadar();
 }
 
+function escHTML(s) {
+  return String(s || '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c] || c));
+}
+
 function updateScoreboard() {
-  setText(ui.bKills, String(player.kills));
-  setText(ui.bDeaths, String(player.deaths));
-  setText(ui.bHs, String(player.headshots));
-  setText(ui.bAlive, String(bots.filter(b => b.alive).length));
-  setText(ui.bRound, String(Math.max(1, game.round)));
-  setText(ui.boardScore, `CT ${game.ctScore} — ${game.tScore} T`);
+  if (ui.bRound) setText(ui.bRound, String(Math.max(1, game.round)));
+  if (ui.boardScore) setText(ui.boardScore, `CT ${game.ctScore} — ${game.tScore} T`);
+  const scoreCtEl = $('boardScoreCt');
+  if (scoreCtEl) scoreCtEl.textContent = `${game.ctScore} RONDAS`;
+  const scoreTEl = $('boardScoreT');
+  if (scoreTEl) scoreTEl.textContent = `${game.tScore} RONDAS`;
+
+  // Clasificar miembros de CT y T
+  const ctMembers = [];
+  const tMembers = [];
+
+  // Jugador local
+  const localObj = {
+    name: player.name || (player.team === 'ct' ? 'OPERADOR CT' : 'OPERADOR T'),
+    isPlayer: true,
+    team: player.team,
+    alive: !!player.alive,
+    kills: player.kills || 0,
+    deaths: player.deaths || 0,
+    hs: player.headshots || 0
+  };
+  if (player.team === 'ct') ctMembers.push(localObj);
+  else tMembers.push(localObj);
+
+  // Jugadores remotos (multijugador)
+  if (window.Multiplayer && typeof Multiplayer.getRemotePlayers === 'function') {
+    const remotes = Multiplayer.getRemotePlayers();
+    for (const rp of remotes) {
+      const rpObj = {
+        name: rp.name || 'JUGADOR',
+        isPlayer: false,
+        team: rp.team || 't',
+        alive: rp.alive !== false,
+        kills: rp.kills || 0,
+        deaths: rp.deaths || 0,
+        hs: rp.headshots || 0
+      };
+      if (rpObj.team === 'ct') ctMembers.push(rpObj);
+      else tMembers.push(rpObj);
+    }
+  }
+
+  // Bots
+  for (const b of bots) {
+    const bObj = {
+      name: b.name || (b.team === 'ct' ? 'BOT CT' : 'BOT T'),
+      isPlayer: false,
+      team: b.team || 't',
+      alive: !!b.alive,
+      kills: b.kills || 0,
+      deaths: b.alive ? 0 : 1,
+      hs: b.hs || 0
+    };
+    if (bObj.team === 'ct') ctMembers.push(bObj);
+    else tMembers.push(bObj);
+  }
+
+  function renderList(list, containerId) {
+    const container = $(containerId);
+    if (!container) return;
+    let html = '';
+    for (const m of list) {
+      const statusClass = m.alive ? 'alive' : 'dead';
+      const statusText = m.alive ? 'VIVO' : '☠';
+      const rowClass = m.isPlayer ? 'board-row my-row' : 'board-row';
+      const displayName = escHTML(m.name) + (m.isPlayer ? ' <small class="me-tag">(TÚ)</small>' : '');
+      html += `<div class="${rowClass} ${statusClass}">
+        <span class="p-name">${displayName}</span>
+        <span class="p-status ${statusClass}">${statusText}</span>
+        <span class="p-k">${m.kills}</span>
+        <span class="p-d">${m.deaths}</span>
+        <span class="p-hs">${m.hs}</span>
+      </div>`;
+    }
+    container.innerHTML = html;
+  }
+
+  renderList(ctMembers, 'boardCtBody');
+  renderList(tMembers, 'boardTBody');
+
+  // Retrocompatibilidad con elementos simples
+  if (ui.bKills) setText(ui.bKills, String(player.kills));
+  if (ui.bDeaths) setText(ui.bDeaths, String(player.deaths));
+  if (ui.bHs) setText(ui.bHs, String(player.headshots));
+  if (ui.bAlive) setText(ui.bAlive, String(bots.filter(b => b.alive).length));
 
   const ctRow = document.querySelector('.ct-row span:first-child');
   if (ctRow) {
@@ -596,7 +758,11 @@ function updatePlayer(dt) {
     const stepLen = player.crouch ? 2.1 : player.walking ? 1.65 : 1.15;
     if (player.stepDist > stepLen) {
       player.stepDist = 0;
-      sfxFootstep(player.crouch ? 0.3 : player.walking ? 0.55 : 1);
+      const cx = Math.floor(player.x), cy = Math.floor(player.y);
+      const cell = (cx >= 0 && cy >= 0 && cx < MW && cy < MH) ? GRID[cy * MW + cx] : 1;
+      const floor = (cx >= 0 && cy >= 0 && cx < MW && cy < MH) ? FLOOR_MAP[cy * MW + cx] : 0;
+      const surf = cell === 2 ? 'wood' : floor === 3 ? 'metal' : floor === 1 ? 'concrete' : 'sand';
+      sfxFootstep(player.crouch ? 0.3 : player.walking ? 0.55 : 1, surf);
     }
   }
 
@@ -614,7 +780,31 @@ function updatePlayer(dt) {
       player.z = 0;
       player.vz = 0;
       player.onGround = true;
-      sfxFootstep(1.1);
+      const cx = Math.floor(player.x), cy = Math.floor(player.y);
+      const cell = (cx >= 0 && cy >= 0 && cx < MW && cy < MH) ? GRID[cy * MW + cx] : 1;
+      const floor = (cx >= 0 && cy >= 0 && cx < MW && cy < MH) ? FLOOR_MAP[cy * MW + cx] : 0;
+      const surf = cell === 2 ? 'wood' : floor === 3 ? 'metal' : floor === 1 ? 'concrete' : 'sand';
+      sfxFootstep(1.15, surf);
+    }
+  }
+
+  // Recogida de armas del suelo si la ranura primaria está vacía
+  if (typeof droppedWeapons !== 'undefined') {
+    for (let i = droppedWeapons.length - 1; i >= 0; i--) {
+      const dw = droppedWeapons[i];
+      const d = dist2D(player.x, player.y, dw.x, dw.y);
+      if (d < 1.15) {
+        if (!player.slots[1]) {
+          player.slots[1] = { id: dw.id, mag: dw.mag, reserve: dw.reserve };
+          droppedWeapons.splice(i, 1);
+          sfxPickup();
+          const wDef = WEAPONS[dw.id];
+          toast('RECOGISTE ' + (wDef ? wDef.name : 'ARMA'));
+          selectSlot(1);
+          updateHUD();
+          break;
+        }
+      }
     }
   }
 
@@ -747,7 +937,7 @@ window.addEventListener('keydown', (e) => {
   }
   if (game.state === 'buy') {
     if (e.code === 'Enter' || e.code === 'NumpadEnter') beginLive();
-    else if (/^(Digit|Numpad)[1-6]$/.test(e.code)) {
+    else if (/^(Digit|Numpad)[1-7]$/.test(e.code)) {
       const num = parseInt(e.code.replace(/^(Digit|Numpad)/, ''), 10);
       buyItem(num - 1);
     }
@@ -755,6 +945,8 @@ window.addEventListener('keydown', (e) => {
   }
   if (game.state === 'live') {
     if (e.code === 'KeyR' && !e.repeat) startReload();
+    if (e.code === 'KeyG' && !e.repeat) dropCurrentWeapon();
+    if ((e.code === 'KeyY' || e.code === 'KeyT') && !e.repeat) { openChat(); return; }
     if ((e.code === 'Digit1' || e.code === 'Numpad1') && !e.repeat) selectSlot(1);
     if ((e.code === 'Digit2' || e.code === 'Numpad2') && !e.repeat) selectSlot(2);
     if ((e.code === 'Digit3' || e.code === 'Numpad3') && !e.repeat) selectSlot(3);
@@ -845,15 +1037,117 @@ function setSensitivity(v) {
   $('sensVal').textContent = game.sens.toFixed(1);
   $('sensVal2').textContent = game.sens.toFixed(1);
 }
+
+function setVolume(v) {
+  game.volume = clamp(parseFloat(v) !== undefined && !isNaN(parseFloat(v)) ? parseFloat(v) : 0.5, 0, 1);
+  safeSetStorage('dust_volume', String(game.volume));
+  const s1 = $('volSlider'), s2 = $('volSlider2');
+  if (s1) s1.value = game.volume;
+  if (s2) s2.value = game.volume;
+  const pct = Math.round(game.volume * 100) + '%';
+  const v1 = $('volVal'), v2 = $('volVal2');
+  if (v1) v1.textContent = pct;
+  if (v2) v2.textContent = pct;
+  if (typeof setMasterVolume === 'function') {
+    setMasterVolume(game.volume);
+  } else if (typeof master !== 'undefined' && master) {
+    master.gain.value = game.muted ? 0 : game.volume;
+  }
+}
+
+function setCrosshairColor(c) {
+  game.crosshairColor = c || 'green';
+  safeSetStorage('dust_crosshair', game.crosshairColor);
+  document.querySelectorAll('.ch-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.color === game.crosshairColor);
+  });
+}
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  } else {
+    document.exitFullscreen().catch(() => {});
+  }
+}
+
+function openChat() {
+  if (game.state !== 'live') return;
+  const chatForm = $('chatForm');
+  const chatInput = $('chatInput');
+  if (!chatForm || !chatInput) return;
+  chatForm.classList.remove('hidden');
+  if (document.pointerLockElement) document.exitPointerLock();
+  setTimeout(() => chatInput.focus(), 50);
+}
+
+function closeChat() {
+  const chatForm = $('chatForm');
+  const chatInput = $('chatInput');
+  if (chatForm) chatForm.classList.add('hidden');
+  if (chatInput) chatInput.value = '';
+  if (game.state === 'live') tryLockPointer();
+}
+
+function addChatMessage(sender, team, text) {
+  const container = $('chatMessages');
+  if (!container) return;
+  const msgEl = document.createElement('div');
+  msgEl.className = 'chat-msg ' + (team === 'ct' ? 'ct' : 't');
+  msgEl.innerHTML = `<b>${escHTML(sender)}:</b> ${escHTML(text)}`;
+  container.appendChild(msgEl);
+  while (container.children.length > 5) container.removeChild(container.firstChild);
+  setTimeout(() => { if (msgEl.parentNode) msgEl.parentNode.removeChild(msgEl); }, 9000);
+}
+
 function initUI() {
   buildShop();
   buildRadarBg();
   setSensitivity(game.sens);
+  const savedVol = parseFloat(safeGetStorage('dust_volume', '0.5'));
+  setVolume(!isNaN(savedVol) ? savedVol : (game.volume !== undefined ? game.volume : 0.5));
+  setCrosshairColor(game.crosshairColor);
+  updateCareerUI();
 
   // detector táctil informativo
   if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
     const tn = $('touchNotice');
     if (tn) tn.classList.remove('hidden');
+  }
+
+  // botones de color de mira
+  document.querySelectorAll('.ch-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.color === game.crosshairColor);
+    btn.addEventListener('click', () => setCrosshairColor(btn.dataset.color));
+  });
+
+  // botones de pantalla completa
+  const fs1 = $('fsBtn'), fs2 = $('fsBtnPause');
+  if (fs1) fs1.addEventListener('click', toggleFullscreen);
+  if (fs2) fs2.addEventListener('click', toggleFullscreen);
+
+  // chat táctico
+  const chatForm = $('chatForm');
+  const chatInput = $('chatInput');
+  if (chatForm && chatInput) {
+    chatForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const txt = (chatInput.value || '').trim();
+      if (txt) {
+        if (window.Multiplayer && Multiplayer.active) {
+          Multiplayer.sendChat(txt);
+        } else {
+          addChatMessage(player.name || 'TÚ', player.team, txt);
+        }
+      }
+      closeChat();
+    });
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeChat();
+      }
+    });
   }
 
   // dificultad
@@ -869,6 +1163,10 @@ function initUI() {
   document.querySelectorAll('#sens, #sens2').forEach(inp => {
     inp.value = game.sens;
     inp.addEventListener('input', () => setSensitivity(inp.value));
+  });
+  document.querySelectorAll('#volSlider, #volSlider2').forEach(inp => {
+    inp.value = game.volume !== undefined ? game.volume : 0.5;
+    inp.addEventListener('input', () => setVolume(inp.value));
   });
 
   $('playBtn').addEventListener('click', startMatch);
@@ -1038,7 +1336,7 @@ function loop(now) {
   Renderer.tick(dt);
 
   if (window.Multiplayer && Multiplayer.active) {
-    Multiplayer.tick(now);
+    Multiplayer.tick(now, dt);
   }
 
   if (game.state === 'menu') {
@@ -1065,5 +1363,5 @@ window.DUST = {
   get bots() { return bots; },
   startMatch, nextRound, beginLive, endRound, advanceRound,
   buyItem, damageBot, damagePlayer, spawnBotsForRound,
-  setSensitivity, tryLockPointer, quitToMenu
+  setSensitivity, setVolume, tryLockPointer, quitToMenu
 };

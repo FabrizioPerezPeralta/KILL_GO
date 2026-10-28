@@ -64,6 +64,13 @@
     <div id="hitmarker"><i></i><i></i></div>
     <div id="dmgDir"></div>
     <div id="scoreHint">TAB · MARCADOR</div>
+    <div id="chatBox">
+      <div id="chatMessages"></div>
+      <form id="chatForm" class="hidden">
+        <input type="text" id="chatInput" placeholder="Mensaje... (ENTER enviar, ESC cancelar)" maxlength="70" autocomplete="off">
+      </form>
+    </div>
+    <div id="quickKeyHint">Y · CHAT &nbsp;|&nbsp; G · SOLTAR ARMA</div>
   </div>
 
   <div id="menu" class="screen">
@@ -93,8 +100,31 @@
           <label>SENSIBILIDAD DEL RATÓN <span id="sensVal">2.2</span></label>
           <input type="range" id="sens" min="0.6" max="6" step="0.1" value="2.2">
         </div>
+        <div class="sens-row">
+          <label>VOLUMEN GENERAL <span id="volVal">50%</span></label>
+          <input type="range" id="volSlider" min="0" max="1" step="0.05" value="0.5">
+        </div>
+        <div class="sens-row">
+          <label>COLOR DE MIRA TÁCTICA</label>
+          <div class="ch-btns">
+            <button class="ch-btn active" data-color="green" style="color:#69e081">VERDE</button>
+            <button class="ch-btn" data-color="cyan" style="color:#50dcff">CIAN</button>
+            <button class="ch-btn" data-color="yellow" style="color:#ffe150">AMARILLO</button>
+            <button class="ch-btn" data-color="red" style="color:#ff5050">ROJO</button>
+          </div>
+        </div>
+        <div class="career-card">
+          <div class="panel-title" style="margin-bottom:8px">EXPEDIENTE DEL OPERADOR</div>
+          <div class="career-stats-row">
+            <div><span id="statKd">0.00</span><small>K / D</small></div>
+            <div><span id="statKills">0</span><small>BAJAS</small></div>
+            <div><span id="statHs">0%</span><small>HS %</small></div>
+            <div><span id="statWins">0</span><small>VICTORIAS</small></div>
+          </div>
+        </div>
         <div class="menu-strip">
           <span>◈ 8 RONDAS PARA GANAR</span><span>◈ SITIO A</span><span>◈ C4 · 40s</span>
+          <button id="fsBtn" class="btn-xs">⛶ PANTALLA COMPLETA</button>
         </div>
         <div id="touchNotice" class="touch-notice hidden">⚠️ Nota: Este juego requiere teclado y ratón para capturar el puntero (Pointer Lock).</div>
       </div>
@@ -108,10 +138,12 @@
           <div><b>CLIC DER</b><span>Mira AWP</span></div>
           <div><b>RUEDA / 1 2 3</b><span>Cambiar arma</span></div>
           <div><b>R</b><span>Recargar</span></div>
+          <div><b>G</b><span>Soltar arma</span></div>
+          <div><b>Y</b><span>Chat táctico</span></div>
           <div><b>SHIFT</b><span>Andar sigiloso</span></div>
           <div><b>CTRL</b><span>Agacharse</span></div>
           <div><b>ESPACIO</b><span>Saltar</span></div>
-          <div><b>E</b><span>Desactivar C4</span></div>
+          <div><b>E</b><span>Desactivar / Plantar</span></div>
           <div><b>TAB</b><span>Marcador</span></div>
           <div><b>ESC / M</b><span>Pausa / Mute</span></div>
         </div>
@@ -130,7 +162,7 @@
       </div>
       <div id="shopGrid" class="shop-grid"></div>
       <div class="buy-bottom">
-        <div class="buy-help"><b>1–6</b> comprar &nbsp;·&nbsp; <b>ENTER</b> comenzar &nbsp;·&nbsp; Los objetos comprados se conservan entre rondas</div>
+        <div class="buy-help"><b>1–7</b> comprar &nbsp;·&nbsp; <b>ENTER</b> comenzar &nbsp;·&nbsp; Los objetos comprados se conservan entre rondas</div>
         <button id="readyBtn" class="btn primary">TODO LISTO ▶</button>
       </div>
       <div id="buyToast"></div>
@@ -144,11 +176,25 @@
       <p class="modal-sub">Tómate un respiro. La acción se reanuda al instante.</p>
       <div class="modal-actions">
         <button id="resumeBtn" class="btn primary">CONTINUAR ▶</button>
+        <button id="fsBtnPause" class="btn">⛶ PANTALLA COMPLETA</button>
         <button id="quitBtn" class="btn">SALIR AL MENÚ</button>
       </div>
       <div class="sens-row compact">
         <label>SENSIBILIDAD <span id="sensVal2">2.2</span></label>
         <input type="range" id="sens2" min="0.6" max="6" step="0.1" value="2.2">
+      </div>
+      <div class="sens-row compact">
+        <label>VOLUMEN <span id="volVal2">50%</span></label>
+        <input type="range" id="volSlider2" min="0" max="1" step="0.05" value="0.5">
+      </div>
+      <div class="sens-row compact">
+        <label>COLOR DE MIRA</label>
+        <div class="ch-btns compact">
+          <button class="ch-btn active" data-color="green" style="color:#69e081">VERDE</button>
+          <button class="ch-btn" data-color="cyan" style="color:#50dcff">CIAN</button>
+          <button class="ch-btn" data-color="yellow" style="color:#ffe150">AMARILLO</button>
+          <button class="ch-btn" data-color="red" style="color:#ff5050">ROJO</button>
+        </div>
       </div>
     </div>
   </div>
@@ -187,11 +233,27 @@
 
   <div id="scoreboard" class="hidden">
     <div class="board">
-      <div class="board-head"><span>OPERACIÓN DUST</span><span id="boardScore">CT 0 — 0 T</span></div>
-      <div class="board-body">
-        <div class="board-row board-title"><span>OPERADOR</span><span>BAJAS</span><span>MUERTES</span><span>HS</span></div>
-        <div class="board-row ct-row"><span>TÚ · CT</span><span id="bKills">0</span><span id="bDeaths">0</span><span id="bHs">0</span></div>
-        <div class="board-row t-row"><span>TERRORISTAS EN PIE</span><span id="bAlive">0</span><span>—</span><span>—</span></div>
+      <div class="board-head"><span>OPERACIÓN DUST · 5 VS 5</span><span id="boardScore">CT 0 — 0 T</span></div>
+      <div class="board-5v5-wrap">
+        <div class="board-team ct-team">
+          <div class="board-team-hdr">
+            <span class="team-lbl ct-color">FUERZAS CT</span>
+            <span id="boardScoreCt">0 RONDAS</span>
+          </div>
+          <div class="board-row board-title"><span>OPERADOR</span><span>ESTADO</span><span>K</span><span>D</span><span>HS</span></div>
+          <div id="boardCtBody" class="board-body-list"></div>
+        </div>
+        <div class="board-team t-team">
+          <div class="board-team-hdr">
+            <span class="team-lbl t-color">TERRORISTAS</span>
+            <span id="boardScoreT">0 RONDAS</span>
+          </div>
+          <div class="board-row board-title"><span>OPERADOR</span><span>ESTADO</span><span>K</span><span>D</span><span>HS</span></div>
+          <div id="boardTBody" class="board-body-list"></div>
+        </div>
+      </div>
+      <div style="display:none">
+        <span id="bKills">0</span><span id="bDeaths">0</span><span id="bHs">0</span><span id="bAlive">0</span>
       </div>
       <div class="board-foot">TAB para cerrar · Ronda <span id="bRound">1</span></div>
     </div>

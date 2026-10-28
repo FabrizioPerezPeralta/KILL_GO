@@ -20,6 +20,12 @@ function losClear(x1, y1, x2, y2) {
   return true;
 }
 
+const A_STAR_N = MW * MH;
+const aStarGScore = new Float32Array(A_STAR_N);
+const aStarCame = new Int32Array(A_STAR_N);
+const aStarClosed = new Uint8Array(A_STAR_N);
+const aStarHeap = [];
+
 function findPath(sx, sy, tx, ty) {
   let startX = clamp(Math.floor(sx), 0, MW - 1);
   let startY = clamp(Math.floor(sy), 0, MH - 1);
@@ -59,44 +65,43 @@ function findPath(sx, sy, tx, ty) {
   const goalIdx = goalY * MW + goalX;
   if (startIdx === goalIdx) return [];
 
-  const n = MW * MH;
-  const gScore = new Float32Array(n).fill(Infinity);
-  const came = new Int32Array(n).fill(-1);
-  const closed = new Uint8Array(n);
-  const heap = [];
+  aStarGScore.fill(Infinity);
+  aStarCame.fill(-1);
+  aStarClosed.fill(0);
+  aStarHeap.length = 0;
 
   function heuristic(x, y) {
     const dx = Math.abs(x - goalX), dy = Math.abs(y - goalY);
     return (dx + dy) + (Math.SQRT2 - 2) * Math.min(dx, dy);
   }
   function push(idx, f) {
-    heap.push({ i: idx, f });
-    let i = heap.length - 1;
+    aStarHeap.push({ i: idx, f });
+    let i = aStarHeap.length - 1;
     while (i > 0) {
       const p = (i - 1) >> 1;
-      if (heap[p].f <= heap[i].f) break;
-      const tmp = heap[p]; heap[p] = heap[i]; heap[i] = tmp; i = p;
+      if (aStarHeap[p].f <= aStarHeap[i].f) break;
+      const tmp = aStarHeap[p]; aStarHeap[p] = aStarHeap[i]; aStarHeap[i] = tmp; i = p;
     }
   }
   function pop() {
-    const top = heap[0];
-    const last = heap.pop();
-    if (heap.length) {
-      heap[0] = last;
+    const top = aStarHeap[0];
+    const last = aStarHeap.pop();
+    if (aStarHeap.length) {
+      aStarHeap[0] = last;
       let i = 0;
       for (;;) {
         const l = i * 2 + 1, r = l + 1;
         let s = i;
-        if (l < heap.length && heap[l].f < heap[s].f) s = l;
-        if (r < heap.length && heap[r].f < heap[s].f) s = r;
+        if (l < aStarHeap.length && aStarHeap[l].f < aStarHeap[s].f) s = l;
+        if (r < aStarHeap.length && aStarHeap[r].f < aStarHeap[s].f) s = r;
         if (s === i) break;
-        const tmp = heap[s]; heap[s] = heap[i]; heap[i] = tmp; i = s;
+        const tmp = aStarHeap[s]; aStarHeap[s] = aStarHeap[i]; aStarHeap[i] = tmp; i = s;
       }
     }
     return top;
   }
 
-  gScore[startIdx] = 0;
+  aStarGScore[startIdx] = 0;
   push(startIdx, heuristic(startX, startY));
 
   const dirs = [
@@ -104,21 +109,21 @@ function findPath(sx, sy, tx, ty) {
     [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2]
   ];
 
-  while (heap.length) {
+  while (aStarHeap.length) {
     const cur = pop();
-    if (closed[cur.i]) continue;
+    if (aStarClosed[cur.i]) continue;
     if (cur.i === goalIdx) {
       const rev = [];
       let c = goalIdx;
       while (c !== -1) {
         rev.push({ x: (c % MW) + 0.5, y: ((c / MW) | 0) + 0.5 });
-        c = came[c];
+        c = aStarCame[c];
       }
       rev.reverse();
       rev.shift();
       return rev;
     }
-    closed[cur.i] = 1;
+    aStarClosed[cur.i] = 1;
     const cx = cur.i % MW, cy = (cur.i / MW) | 0;
     for (const [dx, dy, cost] of dirs) {
       const nx = cx + dx, ny = cy + dy;
@@ -126,11 +131,11 @@ function findPath(sx, sy, tx, ty) {
       if (isSolidCell(nx, ny)) continue;
       if (dx && dy && (isSolidCell(cx + dx, cy) || isSolidCell(cx, cy + dy))) continue;
       const ni = ny * MW + nx;
-      if (closed[ni]) continue;
-      const ng = gScore[cur.i] + cost;
-      if (ng < gScore[ni]) {
-        gScore[ni] = ng;
-        came[ni] = cur.i;
+      if (aStarClosed[ni]) continue;
+      const ng = aStarGScore[cur.i] + cost;
+      if (ng < aStarGScore[ni]) {
+        aStarGScore[ni] = ng;
+        aStarCame[ni] = cur.i;
         push(ni, ng + heuristic(nx, ny));
       }
     }
@@ -187,6 +192,22 @@ function resetBomb() {
   bomb.beepTimer = 0;
   bomb.plantProgress = 0;
   bomb.defuseProgress = 0;
+  player.hasBomb = false;
+  player.planting = false;
+  player.defusing = false;
+
+  if (player.team === 't') {
+    const tBots = bots.filter(b => b.team === 't');
+    if (tBots.length === 0 || Math.random() < 0.6) {
+      bomb.carrier = player;
+      player.hasBomb = true;
+      bomb.x = player.x;
+      bomb.y = player.y;
+      for (const b of bots) b.carrier = false;
+      return;
+    }
+  }
+
   const carrier = bots.find(b => b.carrier) || bots[0];
   bomb.carrier = carrier || null;
   if (carrier) {
@@ -202,7 +223,7 @@ function resetBomb() {
 function nearestBotToBomb() {
   let best = null, bd = 1e9;
   for (const b of bots) {
-    if (!b.alive) continue;
+    if (!b.alive || b.team === 'ct') continue;
     const d = dist2D(b.x, b.y, bomb.x, bomb.y);
     if (d < bd) { bd = d; best = b; }
   }
@@ -210,6 +231,14 @@ function nearestBotToBomb() {
 }
 
 function botObjective(bot) {
+  if (bot.team === 'ct') {
+    if (bomb.state === 'planted') {
+      return { x: bomb.x, y: bomb.y };
+    }
+    if (!bot.defendPos) bot.defendPos = DEFEND_SPOTS[bot.index % DEFEND_SPOTS.length];
+    return bot.defendPos;
+  }
+
   if (bomb.state === 'planted') {
     if (!bot.defendPos) {
       bot.defendPos = DEFEND_SPOTS[(bot.index + 2) % DEFEND_SPOTS.length];
@@ -264,14 +293,56 @@ function updateBot(bot, dt) {
   bot.reaction -= dt;
   bot.alert -= dt;
   bot.planting = false;
+  bot.defusing = false;
 
-  const px = player.x, py = player.y;
-  const d = dist2D(bot.x, bot.y, px, py);
-  const isEnemy = !bot.team || bot.team !== player.team;
-  const los = isEnemy && player.alive && d < 28 && losClear(bot.x, bot.y, px, py);
-  const toPlayer = Math.atan2(py - bot.y, px - bot.x);
-  const inFront = Math.abs(angleDiff(toPlayer, bot.aim)) < 1.95;
-  const sees = los && inFront && game.state === 'live';
+  const botTeam = bot.team || 't';
+  let bestTarget = null;
+  let bestDist = 28;
+
+  // 1. Probar jugador local
+  if (player.alive && player.team !== botTeam) {
+    const d = dist2D(bot.x, bot.y, player.x, player.y);
+    if (d < bestDist && losClear(bot.x, bot.y, player.x, player.y)) {
+      const ang = Math.atan2(player.y - bot.y, player.x - bot.x);
+      if (Math.abs(angleDiff(ang, bot.aim)) < 1.95 || bot.alert > 0) {
+        bestTarget = { type: 'player', x: player.x, y: player.y, z: getEyeHeight() - 0.1, obj: player, d, ang };
+        bestDist = d;
+      }
+    }
+  }
+
+  // 2. Probar otros bots enemigos
+  for (const other of bots) {
+    if (!other.alive || (other.team || 't') === botTeam || other === bot) continue;
+    const d = dist2D(bot.x, bot.y, other.x, other.y);
+    if (d < bestDist && losClear(bot.x, bot.y, other.x, other.y)) {
+      const ang = Math.atan2(other.y - bot.y, other.x - bot.x);
+      if (Math.abs(angleDiff(ang, bot.aim)) < 1.95 || bot.alert > 0) {
+        bestTarget = { type: 'bot', x: other.x, y: other.y, z: BOT_H * 0.7, obj: other, d, ang };
+        bestDist = d;
+      }
+    }
+  }
+
+  // 3. Probar jugadores remotos en multijugador
+  if (window.Multiplayer && Multiplayer.active) {
+    for (const rp of Multiplayer.getRemotePlayers()) {
+      if (!rp.alive || (rp.team || 't') === botTeam) continue;
+      const d = dist2D(bot.x, bot.y, rp.x, rp.y);
+      if (d < bestDist && losClear(bot.x, bot.y, rp.x, rp.y)) {
+        const ang = Math.atan2(rp.y - bot.y, rp.x - bot.x);
+        if (Math.abs(angleDiff(ang, bot.aim)) < 1.95 || bot.alert > 0) {
+          bestTarget = { type: 'remote', x: rp.x, y: rp.y, z: BOT_H * 0.7, obj: rp, d, ang };
+          bestDist = d;
+        }
+      }
+    }
+  }
+
+  const sees = bestTarget !== null && game.state === 'live';
+  bot.target = bestTarget;
+  const targetDist = bestTarget ? bestTarget.d : 999;
+  const toTarget = bestTarget ? bestTarget.ang : 0;
 
   if (sees && !bot.wasSeeing) {
     bot.reaction = DIFF[game.difficulty].reaction + rand(0, 0.18);
@@ -279,18 +350,34 @@ function updateBot(bot, dt) {
   bot.wasSeeing = sees;
   if (sees) {
     bot.alert = 6;
-    bot.lastSeen.x = px;
-    bot.lastSeen.y = py;
+    bot.lastSeen.x = bestTarget.x;
+    bot.lastSeen.y = bestTarget.y;
   }
 
   // hacia dónde mira
   let wantAim = bot.aim;
-  if (sees) wantAim = toPlayer;
+  if (sees) wantAim = toTarget;
   else if (bot.alert > 0) wantAim = Math.atan2(bot.lastSeen.y - bot.y, bot.lastSeen.x - bot.x);
   else if (bot.moving) wantAim = bot.moveAim;
   else wantAim = bot.guardAim + Math.sin(game.time * 0.65 + bot.phase) * 0.5;
   const turnRate = sees ? 7.5 : 3.4;
   bot.aim += clamp(angleDiff(wantAim, bot.aim), -dt * turnRate, dt * turnRate);
+
+  // CT desactiva el C4 si está cerca
+  if (botTeam === 'ct' && bomb.state === 'planted') {
+    const bd = dist2D(bot.x, bot.y, bomb.x, bomb.y);
+    if (bd < 1.6 && !sees && game.state === 'live') {
+      bot.defusing = true;
+      bot.moving = false;
+      bomb.defuseProgress += dt / 10;
+      if (bomb.defuseProgress >= 1) {
+        bomb.state = 'defused';
+        bot.defusing = false;
+        endRound(true, 'C4 desactivado por ' + (bot.name || 'un Antiterrorista'));
+        return;
+      }
+    }
+  }
 
   // disparo
   if (sees && bot.reaction <= 0 && game.state === 'live') {
@@ -310,9 +397,9 @@ function updateBot(bot, dt) {
     if (bot.fireCd < 0.1) bot.fireCd = 0.1;
   }
 
-  // plantar
+  // plantar (solo para T con bomba)
   const atPlant = dist2D(bot.x, bot.y, PLANT_SPOT.x, PLANT_SPOT.y) < 1.4;
-  if (bomb.state === 'carried' && bomb.carrier === bot && atPlant && !sees && game.state === 'live') {
+  if (botTeam === 't' && bomb.state === 'carried' && bomb.carrier === bot && atPlant && !sees && game.state === 'live') {
     bot.planting = true;
     bot.moving = false;
     bot.burstLeft = 0;
@@ -335,22 +422,22 @@ function updateBot(bot, dt) {
   }
 
   // movimiento
-  if (bot.planting) {
+  if (bot.planting || bot.defusing) {
     bot.moving = false;
-  } else if (sees && d < 22) {
+  } else if (sees && targetDist < 22) {
     bot.moving = false;
-    if (d > 2.8) {
+    if (targetDist > 2.8) {
       if (bot.strafeTimer <= 0) {
         bot.strafeTimer = rand(0.8, 1.8);
         bot.strafeDir = Math.random() < 0.5 ? -1 : 1;
       }
-      const sa = toPlayer + Math.PI / 2 * bot.strafeDir + rand(-0.2, 0.2);
+      const sa = toTarget + Math.PI / 2 * bot.strafeDir + rand(-0.2, 0.2);
       const moved = moveEntity(bot, Math.cos(sa) * dt * 1.15, Math.sin(sa) * dt * 1.15, 0.26);
       if (moved) { bot.moving = true; bot.walkPhase += dt * 5; }
     }
   } else {
     let target = botObjective(bot);
-    if (bot.alert > 0 && !los) {
+    if (bot.alert > 0 && !sees) {
       const ld = dist2D(bot.x, bot.y, bot.lastSeen.x, bot.lastSeen.y);
       if (ld < 10 && ld > 0.7) target = bot.lastSeen;
     }
@@ -396,23 +483,30 @@ function updateBots(dt) {
    COMBATE
    --------------------------------------------------------------------- */
 function botFire(bot) {
+  const target = bot.target || (player.alive && player.team !== (bot.team || 't')
+    ? { type: 'player', x: player.x, y: player.y, z: getEyeHeight() - 0.1, obj: player, d: dist2D(bot.x, bot.y, player.x, player.y) }
+    : null);
+  if (!target) return;
+
   const bw = BOT_WEAPONS[bot.weapon];
-  const d = dist2D(bot.x, bot.y, player.x, player.y);
+  const d = target.d || dist2D(bot.x, bot.y, target.x, target.y);
   const diff = DIFF[game.difficulty];
   let chance = diff.hit * bw.acc * clamp(1 - (d - 4) / 27, 0.22, 1);
-  const speed = Math.hypot(player.vx, player.vy);
-  chance *= 1 - clamp(speed / 7, 0, 0.32);
-  if (player.crouch) chance *= 0.88;
-  chance = clamp(chance, 0.04, 0.85);
+  if (target.type === 'player') {
+    const speed = Math.hypot(player.vx, player.vy);
+    chance *= 1 - clamp(speed / 7, 0, 0.32);
+    if (player.crouch) chance *= 0.88;
+  }
+  chance = clamp(chance, 0.05, 0.85);
   const hit = Math.random() < chance;
 
   bot.shootPose = 0.13;
   bot.reveal = 2;
   let ex, ey, ez;
   if (hit) {
-    ex = player.x; ey = player.y; ez = getEyeHeight() - 0.1;
+    ex = target.x; ey = target.y; ez = target.z || 0.6;
   } else {
-    const a = Math.atan2(player.y - bot.y, player.x - bot.x) + rand(-0.075, 0.075);
+    const a = Math.atan2(target.y - bot.y, target.x - bot.x) + rand(-0.075, 0.075);
     const dd = d + rand(-1.5, 2.5);
     ex = bot.x + Math.cos(a) * dd;
     ey = bot.y + Math.sin(a) * dd;
@@ -423,10 +517,19 @@ function botFire(bot) {
     x2: ex, y2: ey, z2: ez,
     life: 0.09, maxLife: 0.09, color: '255,185,90', width: 1.15
   });
-  const rel = Math.atan2(player.y - bot.y, player.x - bot.x) - player.yaw;
+  const rel = Math.atan2(target.y - bot.y, target.x - bot.x) - player.yaw;
   sfxShot(bw.sound, clamp(Math.sin(rel), -1, 1), clamp(1 - d / 36, 0.15, 1) * 0.7);
   if (hit) {
-    damagePlayer(bw.dmg * diff.dmg * rand(0.85, 1.15), bot);
+    const dmg = bw.dmg * diff.dmg * rand(0.85, 1.15);
+    if (target.type === 'player') {
+      damagePlayer(dmg, bot);
+    } else if (target.type === 'bot') {
+      damageBot(target.obj, dmg, false, ex, ey, ez);
+    } else if (target.type === 'remote') {
+      if (window.Multiplayer && Multiplayer.active && Multiplayer.isHost) {
+        Multiplayer.applyDamageToPlayer(target.obj.id, dmg, false, bot.name || 'BOT');
+      }
+    }
   } else {
     spawnImpact(ex, ey, ez, 1, true);
   }
@@ -459,6 +562,20 @@ function killPlayer() {
   player.defusing = false;
   game.deathTimer = 2.3;
   mouseDown = false;
+  if (player.slots[1] && typeof droppedWeapons !== 'undefined') {
+    droppedWeapons.push({
+      id: player.slots[1].id,
+      x: player.x,
+      y: player.y,
+      mag: player.slots[1].mag,
+      reserve: player.slots[1].reserve,
+      bobPhase: Math.random() * 6.28
+    });
+    player.slots[1] = null;
+  }
+  if (window.careerStats) {
+    careerStats.recordDeath();
+  }
   banner('ELIMINADO', 'Los terroristas controlan el sitio', 'lose', 2.2);
   addKillfeed('☠ <b>TÚ</b> has caído en combate');
 }
@@ -574,10 +691,25 @@ function killBot(bot, head) {
   corpses.push({ x: bot.x, y: bot.y, variant: bot.variant });
   player.kills++;
   if (head) player.headshots++;
+  if (window.careerStats) {
+    careerStats.recordKill(head);
+  }
   const reward = head ? 400 : 300;
   player.money = Math.min(MAX_MONEY, player.money + reward);
-  addKillfeed(`<b>TÚ</b> ▸ TERRORISTA${head ? ' <span class="hs">HEADSHOT</span>' : ''} <em>+$${reward}</em>`);
+  const victimName = bot.name || (bot.team === 'ct' ? 'POLICÍA' : 'TERRORISTA');
+  addKillfeed(`<b>TÚ</b> ▸ ${victimName}${head ? ' <span class="hs">HEADSHOT</span>' : ''} <em>+$${reward}</em>`);
   sfxKill(head);
+
+  if (bot.weapon && WEAPONS[bot.weapon] && typeof droppedWeapons !== 'undefined') {
+    droppedWeapons.push({
+      id: bot.weapon,
+      x: bot.x,
+      y: bot.y,
+      mag: WEAPONS[bot.weapon].mag,
+      reserve: WEAPONS[bot.weapon].reserve,
+      bobPhase: Math.random() * 6.28
+    });
+  }
 
   if (bomb.state === 'carried' && bomb.carrier === bot) dropBomb(bot);
 
@@ -587,10 +719,9 @@ function killBot(bot, head) {
     b.lastSeen.x = player.x;
     b.lastSeen.y = player.y;
   }
-  if (bomb.state === 'carried' && !bots.some(b => b.alive && b.carrier)) {
-    // si el portador murió y no quedan portadores
-    const alive = bots.filter(b => b.alive);
-    if (alive.length) { bomb.carrier = alive[0]; alive[0].carrier = true; }
+  if (bomb.state === 'carried' && !bots.some(b => b.alive && b.carrier) && bomb.carrier !== player) {
+    const aliveT = bots.filter(b => b.alive && b.team !== 'ct');
+    if (aliveT.length) { bomb.carrier = aliveT[0]; aliveT[0].carrier = true; }
   }
   checkRoundState();
 }
@@ -598,14 +729,22 @@ function killBot(bot, head) {
 function updateBomb(dt) {
   if (game.state !== 'live') return;
 
-  const anyPlanting = bots.some(b => b.alive && b.planting);
+  const anyPlanting = bots.some(b => b.alive && b.planting) || player.planting;
   if (!anyPlanting) {
     const warn = document.querySelector('.plant-warning');
     if (warn) warn.remove();
   }
 
+  // Si la bomba es llevada por el jugador
   if (bomb.state === 'carried') {
-    if (bomb.carrier && bomb.carrier.alive) {
+    if (bomb.carrier === player || player.hasBomb) {
+      if (player.alive) {
+        bomb.x = player.x;
+        bomb.y = player.y;
+      } else {
+        dropBomb(player);
+      }
+    } else if (bomb.carrier && bomb.carrier.alive) {
       bomb.x = bomb.carrier.x;
       bomb.y = bomb.carrier.y;
     } else {
@@ -614,21 +753,68 @@ function updateBomb(dt) {
     }
   }
 
-  if (bomb.state === 'dropped') {
-    let picker = null, pd = 1.0;
-    for (const b of bots) {
-      if (!b.alive) continue;
-      const d = dist2D(b.x, b.y, bomb.x, bomb.y);
-      if (d < pd) { pd = d; picker = b; }
+  // Plantar C4 por parte del jugador humano Terrorista
+  if (player.alive && player.team === 't' && bomb.state === 'carried' && (bomb.carrier === player || player.hasBomb)) {
+    const inSite = dist2D(player.x, player.y, SITE_CENTER.x, SITE_CENTER.y) < 3.8;
+    const still = Math.hypot(player.vx, player.vy) < 0.7;
+    if (inSite && keys.KeyE && still) {
+      player.planting = true;
+      bomb.plantProgress += dt;
+      player.plantBeep = (player.plantBeep || 0) - dt;
+      if (player.plantBeep <= 0) {
+        player.plantBeep = 0.55;
+        sfxBombBeep(false);
+      }
+      if (bomb.plantProgress >= 3.2) {
+        player.planting = false;
+        player.hasBomb = false;
+        plantBomb(player);
+        if (window.Multiplayer && Multiplayer.active) {
+          Multiplayer.sendPlant(player.x, player.y);
+        }
+        return;
+      }
+    } else {
+      player.planting = false;
+      player.plantBeep = 0;
+      if (!keys.KeyE) bomb.plantProgress = Math.max(0, bomb.plantProgress - dt * 0.8);
     }
-    if (picker) {
-      bomb.state = 'carried';
-      bomb.carrier = picker;
-      for (const b of bots) b.carrier = false;
-      picker.carrier = true;
-      bomb.plantProgress = 0;
-      sfxPickup();
-      addKillfeed('C4 RECUPERADO POR LOS TERRORISTAS');
+  } else if (player.team === 't') {
+    player.planting = false;
+  }
+
+  if (bomb.state === 'dropped') {
+    // Si el jugador humano Terrorista está sobre la bomba, la recoge
+    if (player.alive && player.team === 't') {
+      const pd = dist2D(player.x, player.y, bomb.x, bomb.y);
+      if (pd < 1.25) {
+        bomb.state = 'carried';
+        bomb.carrier = player;
+        player.hasBomb = true;
+        for (const b of bots) b.carrier = false;
+        bomb.plantProgress = 0;
+        sfxPickup();
+        toast('HAS RECOGIDO EL C4');
+        addKillfeed('💣 <b>' + (player.name || 'TÚ') + '</b> recogió el C4');
+      }
+    }
+
+    if (bomb.state === 'dropped') {
+      let picker = null, pd = 1.0;
+      for (const b of bots) {
+        if (!b.alive || b.team === 'ct') continue;
+        const d = dist2D(b.x, b.y, bomb.x, bomb.y);
+        if (d < pd) { pd = d; picker = b; }
+      }
+      if (picker) {
+        bomb.state = 'carried';
+        bomb.carrier = picker;
+        for (const b of bots) b.carrier = false;
+        picker.carrier = true;
+        bomb.plantProgress = 0;
+        sfxPickup();
+        addKillfeed('C4 RECUPERADO POR LOS TERRORISTAS');
+      }
     }
   }
 
@@ -642,10 +828,13 @@ function updateBomb(dt) {
 
     const near = dist2D(player.x, player.y, bomb.x, bomb.y) < 1.75;
     const still = Math.hypot(player.vx, player.vy) < 0.7;
-    if (player.alive && keys.KeyE && near && still) {
+    if (player.alive && player.team === 'ct' && keys.KeyE && near && still) {
       player.defusing = true;
       const before = bomb.defuseProgress;
       bomb.defuseProgress += dt / (player.kit ? 5 : 10);
+      if (window.Multiplayer && Multiplayer.active) {
+        Multiplayer.sendDefuse(bomb.defuseProgress, player.name);
+      }
       if (Math.floor(before * 20) !== Math.floor(bomb.defuseProgress * 20)) sfxDefuseTick();
       if (bomb.defuseProgress >= 1) {
         bomb.state = 'defused';
@@ -655,9 +844,9 @@ function updateBomb(dt) {
         endRound(true, 'C4 desactivado a tiempo');
         return;
       }
-    } else {
-      bomb.defuseProgress = 0;
+    } else if (player.team === 'ct') {
       player.defusing = false;
+      bomb.defuseProgress = 0;
     }
 
     if (bomb.timer <= 0) {
@@ -669,33 +858,40 @@ function updateBomb(dt) {
   }
 }
 
-function plantBomb(bot) {
+function plantBomb(source) {
   bomb.state = 'planted';
-  bomb.x = bot.x;
-  bomb.y = bot.y;
+  bomb.x = source.x;
+  bomb.y = source.y;
   bomb.timer = BOMB_TIME;
   bomb.beepTimer = 0;
   bomb.plantProgress = 0;
   bomb.defuseProgress = 0;
   bomb.carrier = null;
+  if (player.hasBomb) player.hasBomb = false;
+  player.planting = false;
   for (const b of bots) {
     b.carrier = false;
     b.defendPos = null;
     b.planting = false;
   }
-  banner('BOMBA PLANTADA', 'Sitio A · desactívala o explotará', 'warn', 2.6);
-  addKillfeed('💣 <b>C4 ARMADO</b> EN EL SITIO A');
+  const planterName = source === player ? (player.name || 'TÚ') : (source.name || 'TERRORISTA');
+  banner('BOMBA PLANTADA', 'Sitio A · ' + (player.team === 'ct' ? 'Desactívala o explotará' : 'Defiéndela de la policía'), 'warn', 2.6);
+  addKillfeed(`💣 <b>C4 ARMADO</b> por ${planterName}`);
   sfxPlant();
+  if (typeof radioAnnounce === 'function') {
+    radioAnnounce('The bomb has been planted');
+  }
   Array.from(document.querySelectorAll('.plant-warning')).forEach(el => el.remove());
 }
 
-function dropBomb(bot) {
+function dropBomb(source) {
   bomb.state = 'dropped';
   bomb.carrier = null;
-  bomb.x = bot.x;
-  bomb.y = bot.y;
+  bomb.x = source.x;
+  bomb.y = source.y;
   bomb.plantProgress = 0;
-  bot.carrier = false;
+  if (source === player) player.hasBomb = false;
+  else source.carrier = false;
   banner('C4 EN EL SUELO', 'Los terroristas intentarán recuperarlo', 'warn', 2);
   addKillfeed('💣 <b>C4 CAÍDO</b>');
 }
