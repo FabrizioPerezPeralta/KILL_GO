@@ -1,0 +1,24 @@
+{
+  "name": "dust-strike",
+  "version": "1.1.0",
+  "description": "Juego táctico de disparos 3D en primera persona inspirado en Counter-Strike en el navegador con motor de raycasting Canvas puro.",
+  "main": "index.html",
+  "scripts": {
+    "test": "node tests/run_tests.js",
+    "audit": "node tools/audit_assets.js",
+    "benchmark": "node tools/bot_benchmark.js",
+    "check": "node tests/run_tests.js && node tools/audit_assets.js"
+  },
+  "keywords": [
+    "game",
+    "raycasting",
+    "canvas",
+    "counter-strike",
+    "fps",
+    "webrtc",
+    "vanilla-js"
+  ],
+  "author": "Fabrizio Perez Peralta",
+  "license": "MIT"
+}
+

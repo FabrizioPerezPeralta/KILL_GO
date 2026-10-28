@@ -95,7 +95,11 @@
 CSGOEPIS/
 ├── .github/
 │   └── workflows/
-│       └── deploy.yml          # Automatización de CI/CD para GitHub Pages con chequeo sintáctico
+│       ├── deploy.yml          # CI/CD: validación de código, tests, auditoría y despliegue en Pages
+│       ├── release.yml         # Automatización: empaquetado de release zip y changelog en tags
+│       ├── tests.yml           # Automatización: Batería de pruebas unitarias en cada push/PR
+│       ├── audit.yml           # Automatización: Auditoría de enlaces y assets en cada push/PR
+│       └── benchmark.yml       # Automatización: Bot Benchmark & Stress Test periódico y manual
 ├── js/
 │   ├── core/                   # Capa 2 & 4: Motor Central y Máquina de Estados
 │   │   ├── EventBus.js         # Bus de eventos Pub/Sub desacoplado
@@ -119,7 +123,18 @@ CSGOEPIS/
 │   │   └── Multiplayer.js      # Sincronización P2P, salas 5v5 y estados remotos
 │   └── ui/                     # Interfaz de Usuario y Presentación
 │       └── UI.js               # HUD reactivo, radar, tienda, chat y listeners
+├── tests/                      # Suite de Pruebas Unitarias Automatizadas
+│   ├── eventbus.test.js        # Pruebas del bus de eventos
+│   ├── ecs.test.js             # Pruebas del gestor de entidades y componentes
+│   ├── fsm.test.js             # Pruebas de la máquina de estados
+│   ├── combat.test.js          # Pruebas de balística, blindaje y economía
+│   ├── test_env.js             # Entorno headless mock para Canvas y DOM
+│   └── run_tests.js            # Ejecutor unificado de pruebas
+├── tools/                      # Herramientas de Automatización
+│   ├── audit_assets.js         # Auditoría de integridad de enlaces, scripts y assets
+│   └── bot_benchmark.js        # Simulador headless de partidas para balance y estrés
 ├── index.html                  # Estructura del juego y carga modular de capas
+├── package.json                # Comandos de automatización (npm test, audit, benchmark)
 ├── style.css                   # Estilos visuales oscuros, HUD táctico y diseño responsivo
 ├── .nojekyll                   # Preserva assets en GitHub Pages
 ├── .gitignore                  # Exclusiones de Git
@@ -127,6 +142,35 @@ CSGOEPIS/
 ├── _shot_menu.png              # Captura del menú
 └── README.md                   # Documentación completa del proyecto
 ```
+
+---
+
+## ⚙️ Automatizaciones y Comandos de Calidad
+
+El proyecto incluye scripts automatizados sin dependencias externas pesadas:
+
+```bash
+# Ejecutar la suite completa de pruebas unitarias
+npm test
+
+# Auditar la integridad de enlaces, scripts y assets
+npm run audit
+
+# Ejecutar el simulador de estrés y balance táctico (50 rondas headless)
+npm run benchmark
+
+# Ejecutar validación combinada (tests + auditoría)
+npm run check
+```
+
+### En el navegador:
+Puedes ejecutar el benchmark táctico directamente desde la consola de desarrollador del navegador escribiendo:
+```javascript
+DUST.benchmark(50);
+```
+
+### Generación Automática de Releases:
+Al publicar un tag de versión en Git (ej. `v1.1.0`), la acción `.github/workflows/release.yml` compilará las notas de versión con el changelog automático y adjuntará un paquete `.zip` standalone offline listo para jugar.
 
 ---
 

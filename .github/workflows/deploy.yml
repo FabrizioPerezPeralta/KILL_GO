@@ -36,6 +36,14 @@ jobs:
             node --check "$f"
           done
 
+      - name: Run Unit Tests
+        run: |
+          node tests/run_tests.js
+
+      - name: Audit Assets & Links
+        run: |
+          node tools/audit_assets.js
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

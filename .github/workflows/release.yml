@@ -1,0 +1,66 @@
+name: Automated Release & Changelog
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Nombre del tag de versión (ej. v1.1.0)'
+        required: true
+        default: 'v1.1.0'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build Release Package & Changelog
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Validate Code & Assets
+        run: |
+          echo "🔍 Validando sintaxis JavaScript..."
+          find js -type f -name "*.js" | while read -r f; do
+            node --check "$f"
+          done
+          echo "🧪 Ejecutando pruebas unitarias..."
+          node tests/run_tests.js
+          echo "📦 Auditando assets..."
+          node tools/audit_assets.js
+
+      - name: Package Standalone Offline Distribution (.zip)
+        id: package
+        run: |
+          VERSION="${{ github.ref_name }}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then
+            VERSION="${{ github.event.inputs.tag_name }}"
+          fi
+          ZIP_NAME="dust-strike-${VERSION}.zip"
+          echo "Empaquetando distribución offline: $ZIP_NAME"
+          zip -r "$ZIP_NAME" index.html style.css js/ _shot_live.png _shot_menu.png README.md package.json .nojekyll
+          echo "zip_name=$ZIP_NAME" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release with Automated Changelog
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.package.outputs.version }}"
+          ZIP_FILE="${{ steps.package.outputs.zip_name }}"
+          echo "Publicando release para versión: $VERSION"
+          gh release create "$VERSION" "$ZIP_FILE" \
+            --title "DUST STRIKE $VERSION" \
+            --generate-notes
+

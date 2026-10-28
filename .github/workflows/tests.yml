@@ -1,0 +1,43 @@
+name: Automated Unit Tests (Pruebas Unitarias)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'js/**'
+      - 'tests/**'
+      - 'package.json'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    name: Run Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Validate JavaScript Syntax
+        run: |
+          echo "🔍 Validando sintaxis de archivos JavaScript..."
+          find js -type f -name "*.js" | while read -r f; do
+            node --check "$f"
+          done
+
+      - name: Run Test Suite
+        run: |
+          node tests/run_tests.js
+

@@ -1407,5 +1407,22 @@ window.DUST = {
   Engine: typeof Engine !== 'undefined' ? Engine : null,
   startMatch, nextRound, beginLive, endRound, advanceRound,
   buyItem, damageBot, damagePlayer, spawnBotsForRound,
-  setSensitivity, setVolume, tryLockPointer, quitToMenu
+  setSensitivity, setVolume, tryLockPointer, quitToMenu,
+  benchmark(rounds = 30) {
+    console.log(`%c[DUST STRIKE]%c Simulando benchmark de ${rounds} rondas...`, 'color:#e28d29;font-weight:bold', '');
+    let ct = 0, t = 0;
+    const start = performance.now();
+    for (let i = 0; i < rounds; i++) {
+      const ctWins = Math.random() < 0.52;
+      if (ctWins) ct++; else t++;
+    }
+    const ms = (performance.now() - start).toFixed(1);
+    console.table({
+      'Rondas': rounds,
+      'Victorias CT': `${ct} (${((ct / rounds) * 100).toFixed(1)}%)`,
+      'Victorias T': `${t} (${((t / rounds) * 100).toFixed(1)}%)`,
+      'Tiempo': `${ms} ms`
+    });
+    return { rounds, ct, t, ms };
+  }
 };

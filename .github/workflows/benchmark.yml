@@ -1,0 +1,42 @@
+name: Bot Benchmark & Stress Test (Simulación de Bots)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'js/game/**'
+      - 'tools/bot_benchmark.js'
+  workflow_dispatch:
+    inputs:
+      rounds:
+        description: 'Número de rondas de combate a simular'
+        required: false
+        default: '50'
+  schedule:
+    # Ejecuta automáticamente una prueba de estrés semanal (domingos a las 00:00 UTC)
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: Headless Match Simulation & Memory Stress
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run Bot Benchmark
+        run: |
+          ROUNDS="${{ github.event.inputs.rounds || '50' }}"
+          echo "⚔️ Ejecutando benchmark táctico con $ROUNDS rondas..."
+          node tools/bot_benchmark.js "$ROUNDS"
+

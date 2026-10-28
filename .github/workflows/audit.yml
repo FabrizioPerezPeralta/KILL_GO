@@ -1,0 +1,37 @@
+name: Asset & Link Auditor (Auditoría de Assets)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'index.html'
+      - 'style.css'
+      - 'js/**'
+      - 'tools/audit_assets.js'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit-assets:
+    name: Audit Integrity of Assets & Links
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run Asset Integrity Check
+        run: |
+          node tools/audit_assets.js
+
