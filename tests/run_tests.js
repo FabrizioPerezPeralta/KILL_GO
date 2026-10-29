@@ -11,7 +11,8 @@ const testFiles = [
   'tests/eventbus.test.js',
   'tests/ecs.test.js',
   'tests/fsm.test.js',
-  'tests/combat.test.js'
+  'tests/combat.test.js',
+  'tests/multiplayer.test.js'
 ];
 
 console.log('🔫 DUST STRIKE — Ejecutando suite de pruebas unitarias...\n');

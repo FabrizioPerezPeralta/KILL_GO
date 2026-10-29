@@ -679,6 +679,12 @@ function shootHitscan(yaw, pitch, def) {
     const falloff = clamp(1 - Math.max(0, bestT - 9) / 55, 0.55, 1);
     let dmg = def.dmg * falloff * (head ? def.hs : 1);
     damageBot(bestBot, dmg, head, endX, endY, hitZ);
+    if (window.Multiplayer && Multiplayer.active && !Multiplayer.isHost) {
+      const botIdx = bots.indexOf(bestBot);
+      if (botIdx !== -1) {
+        Multiplayer.sendBotHit(botIdx, dmg, head);
+      }
+    }
   } else if (hitRemote) {
     const falloff = clamp(1 - Math.max(0, bestT - 9) / 55, 0.55, 1);
     let dmg = def.dmg * falloff * (head ? def.hs : 1);
@@ -869,6 +875,9 @@ function updateBomb(dt) {
         if (typeof Engine !== 'undefined' && Engine.events) {
           Engine.events.emit('bomb:defused', { player });
         }
+        if (window.Multiplayer && Multiplayer.active && Multiplayer.isHost) {
+          Multiplayer.broadcastRoundEvent('defused', { text: 'C4 desactivado a tiempo' });
+        }
         endRound(true, 'C4 desactivado a tiempo');
         return;
       }
@@ -912,6 +921,9 @@ function plantBomb(source) {
   if (typeof radioAnnounce === 'function') {
     radioAnnounce('The bomb has been planted');
   }
+  if (window.Multiplayer && Multiplayer.active && Multiplayer.isHost) {
+    Multiplayer.broadcastRoundEvent('planted', { x: bomb.x, y: bomb.y, timer: bomb.timer });
+  }
   Array.from(document.querySelectorAll('.plant-warning')).forEach(el => el.remove());
 }
 
@@ -936,6 +948,9 @@ function explodeBomb() {
   sfxBoom();
   if (typeof Engine !== 'undefined' && Engine.events) {
     Engine.events.emit('bomb:exploded', { x: bomb.x, y: bomb.y });
+  }
+  if (window.Multiplayer && Multiplayer.active && Multiplayer.isHost) {
+    Multiplayer.broadcastRoundEvent('exploded');
   }
   for (let i = 0; i < 60; i++) {
     particles.push({

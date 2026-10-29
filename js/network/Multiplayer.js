@@ -40,7 +40,8 @@ const Multiplayer = (() => {
   }
 
   function getShareUrl(code) {
-    const url = new URL(window.location.href);
+    const base = (typeof window !== 'undefined' && window.location && window.location.href) ? window.location.href : 'http://localhost/';
+    const url = new URL(base);
     url.searchParams.set('room', code || roomCode || '');
     return url.toString();
   }
@@ -302,8 +303,12 @@ const Multiplayer = (() => {
       game.started = true;
       player.team = msg.yourTeam || player.team;
       startMultiplayerMatchAsClient(msg);
+    } else if (msg.type === 'ROUND_LIVE') {
+      beginLive();
     } else if (msg.type === 'SERVER_SNAPSHOT') {
       applyServerSnapshot(msg);
+    } else if (msg.type === 'TAKE_DAMAGE') {
+      handleTakeDamage(msg);
     } else if (msg.type === 'REMOTE_SHOOT') {
       // Dibujar trazadora y reproducir sonido de disparo de otro jugador
       if (msg.shooterId !== (peer ? peer.id : 'host')) {
@@ -335,6 +340,9 @@ const Multiplayer = (() => {
       game.ctScore = msg.ctScore;
       game.tScore = msg.tScore;
       game.state = 'buy';
+      if (typeof Engine !== 'undefined' && Engine.fsm) {
+        Engine.fsm.transitionTo('buy');
+      }
       game.buyTimer = BUY_TIME;
       game.buyExpired = false;
       game.roundTime = ROUND_TIME;
@@ -350,6 +358,14 @@ const Multiplayer = (() => {
         if (msg.head) player.headshots++;
         player.money = Math.min(MAX_MONEY, player.money + msg.reward);
         sfxKill(msg.head);
+      }
+      if (msg.victimName === player.name && player.alive) {
+        player.alive = false;
+        player.hp = 0;
+        player.deaths++;
+        game.deathTimer = 3.0;
+        if (document.pointerLockElement) document.exitPointerLock();
+        banner('HAS CAÍDO', 'Eliminado por ' + (msg.killerName || 'el enemigo'), 'loss', 3.0);
       }
     } else if (msg.type === 'CHAT_MSG') {
       if (typeof addChatMessage === 'function') addChatMessage(msg.sender, msg.team, msg.text);
@@ -449,6 +465,9 @@ const Multiplayer = (() => {
     ui.menu.classList.add('hidden');
     game.round = msg.round || 1;
     game.state = 'buy';
+    if (typeof Engine !== 'undefined' && Engine.fsm) {
+      Engine.fsm.transitionTo('buy');
+    }
     setupLocalPlayerForMultiplayer();
     openBuyMenu();
     updateHUD();
@@ -459,6 +478,9 @@ const Multiplayer = (() => {
     hideAllScreens();
     ui.hud.classList.remove('hidden');
     game.state = 'buy';
+    if (typeof Engine !== 'undefined' && Engine.fsm) {
+      Engine.fsm.transitionTo('buy');
+    }
     game.buyTimer = BUY_TIME;
     game.buyExpired = false;
     game.roundTime = ROUND_TIME;
@@ -483,6 +505,27 @@ const Multiplayer = (() => {
     player.defusing = false;
     player.planting = false;
     player.money = player.money || 800;
+    player.deathTimer = 0;
+    player.crouch = false;
+    player.walking = false;
+    player.scope = false;
+    player.reload = 0;
+    player.fireCd = 0;
+    player.recoilPitch = 0;
+    player.recoilYaw = 0;
+    player.recoilShots = 0;
+    player.heat = 0;
+    player.flashTimer = 0;
+    player.viewKick = 0;
+    player.bob = 0;
+    player.stepDist = 0;
+
+    corpses = [];
+    tracers = [];
+    particles = [];
+    droppedWeapons = [];
+    if (ui.killfeed) ui.killfeed.innerHTML = '';
+    Array.from(document.querySelectorAll('.plant-warning')).forEach(el => el.remove());
 
     // Asignar punto de reaparición según bando
     if (player.team === 'ct') {
@@ -640,10 +683,29 @@ const Multiplayer = (() => {
   function applyServerSnapshot(snap) {
     if (!snap) return;
 
-    // Actualizar jugadores remotos con interpolación
+    // Si el anfitrión ya arrancó la ronda en vivo y el cliente sigue en compra, activar live
+    if (snap.state === 'live' && game.state === 'buy') {
+      beginLive();
+    }
+
+    // Actualizar jugadores remotos con interpolación y sincronizar estado autoritativo
     if (snap.players) {
+      const myId = peer ? peer.id : '';
       for (const p of snap.players) {
-        if (p.id !== (peer ? peer.id : '')) {
+        if (p.id === myId) {
+          // El Host es la autoridad sobre nuestra salud
+          if (p.hp !== undefined && p.hp < player.hp) {
+            player.hp = Math.max(0, p.hp);
+            game.damageFlash = 0.8;
+          }
+          if (p.alive === false && player.alive) {
+            player.alive = false;
+            player.hp = 0;
+            player.deaths++;
+            game.deathTimer = 3.0;
+            if (document.pointerLockElement) document.exitPointerLock();
+          }
+        } else {
           let exist = remotePlayers.get(p.id);
           if (!exist) {
             remotePlayers.set(p.id, {
@@ -752,7 +814,18 @@ const Multiplayer = (() => {
     } else {
       const rp = remotePlayers.get(targetId);
       if (rp && rp.alive) {
-        rp.hp -= dmg;
+        rp.hp = Math.max(0, rp.hp - dmg);
+        // Notificar al cliente objetivo de forma instantánea
+        const conn = connections.get(targetId);
+        if (conn && conn.open) {
+          conn.send({
+            type: 'TAKE_DAMAGE',
+            dmg,
+            head,
+            shooterName,
+            remainingHp: rp.hp
+          });
+        }
         if (rp.hp <= 0) {
           rp.alive = false;
           rp.hp = 0;
@@ -760,6 +833,38 @@ const Multiplayer = (() => {
           broadcastKill(shooterName, rp.name, head, reward);
         }
       }
+    }
+  }
+
+  function handleTakeDamage(msg) {
+    player.hp = Math.max(0, msg.remainingHp !== undefined ? msg.remainingHp : player.hp - msg.dmg);
+    game.damageFlash = 1.0;
+    game.damageDirTimer = 0.8;
+    sfxHit(msg.head);
+    if (typeof Engine !== 'undefined' && Engine.events) {
+      Engine.events.emit('player:damage', { dmg: msg.dmg, head: msg.head, shooter: msg.shooterName });
+    }
+    updateHUD();
+    if (player.hp <= 0 && player.alive) {
+      player.alive = false;
+      player.deaths++;
+      game.deathTimer = 3.0;
+      if (document.pointerLockElement) document.exitPointerLock();
+      banner('HAS CAÍDO', 'Eliminado por ' + (msg.shooterName || 'el enemigo'), 'loss', 3.0);
+    }
+  }
+
+  function sendBotHit(botIndex, dmg, head) {
+    if (!active || isHost) return;
+    if (hostConn && hostConn.open) {
+      hostConn.send({
+        type: 'CLIENT_HIT',
+        targetType: 'bot',
+        botIndex,
+        dmg,
+        head,
+        shooterName: player.name
+      });
     }
   }
 
@@ -851,6 +956,22 @@ const Multiplayer = (() => {
     }
   }
 
+  function broadcastRoundLive() {
+    if (!isHost) return;
+    const msg = { type: 'ROUND_LIVE' };
+    for (const [id, conn] of connections) {
+      if (conn.open) conn.send(msg);
+    }
+  }
+
+  function broadcastRoundEvent(event, extra = {}) {
+    if (!isHost) return;
+    const msg = { type: 'ROUND_EVENT', event, ...extra };
+    for (const [id, conn] of connections) {
+      if (conn.open) conn.send(msg);
+    }
+  }
+
   function broadcastRoundOver(ctWin, reason) {
     if (!isHost) return;
     const msg = { type: 'ROUND_OVER', ctWin, reason };
@@ -901,8 +1022,15 @@ const Multiplayer = (() => {
       url.searchParams.delete('room');
       window.history.replaceState({}, '', url.toString());
     }
+    const joinSec = document.getElementById('lobbyJoinSection');
+    const roomSec = document.getElementById('lobbyRoomSection');
+    if (joinSec) joinSec.classList.remove('hidden');
+    if (roomSec) roomSec.classList.add('hidden');
     hideAllScreens();
     ui.menu.classList.remove('hidden');
+    if (typeof Engine !== 'undefined' && Engine.fsm) {
+      Engine.fsm.transitionTo('menu');
+    }
   }
 
   /* ---------------------------------------------------------------------
@@ -1033,6 +1161,9 @@ const Multiplayer = (() => {
     sendDefuse,
     sendChat,
     sendDropWeapon,
+    sendBotHit,
+    broadcastRoundLive,
+    broadcastRoundEvent,
     broadcastRoundOver,
     nextMultiplayerRound,
     applyDamageToPlayer,

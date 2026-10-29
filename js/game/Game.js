@@ -59,7 +59,6 @@ const TARGET_SCORE = 8;
 const MAX_MONEY = 16000;
 
 const game = {
-  state: 'menu',
   difficulty: 'normal',
   crosshairColor: 'green',
   round: 0,
@@ -84,6 +83,20 @@ const game = {
   volume: 0.5,
   started: false
 };
+
+let _gameState = 'menu';
+Object.defineProperty(game, 'state', {
+  get() { return _gameState; },
+  set(val) {
+    if (_gameState === val) return;
+    _gameState = val;
+    if (typeof Engine !== 'undefined' && Engine.fsm && Engine.fsm.currentName !== val && Engine.fsm.states && Engine.fsm.states.has(val)) {
+      Engine.fsm.transitionTo(val);
+    }
+  },
+  configurable: true,
+  enumerable: true
+});
 
 const player = {
   x: CT_SPAWN.x, y: CT_SPAWN.y, yaw: CT_SPAWN.yaw, pitch: -0.02,
@@ -678,7 +691,7 @@ function nextRound() {
 }
 
 function beginLive() {
-  if (game.state !== 'buy') return;
+  if (game.state !== 'buy' && game.state !== 'live') return;
   game.state = 'live';
   if (typeof Engine !== 'undefined') {
     Engine.fsm.transitionTo('live');
@@ -692,10 +705,14 @@ function beginLive() {
   sfxRoundStart();
   tryLockPointer();
   updateHUD();
+
+  if (window.Multiplayer && Multiplayer.active && Multiplayer.isHost) {
+    Multiplayer.broadcastRoundLive();
+  }
 }
 
 function endRound(ctWin, reason) {
-  if (game.state !== 'live') return;
+  if (game.state !== 'live' && !(window.Multiplayer && Multiplayer.active)) return;
   game.state = 'roundover';
   game.lastResult = { ctWin, reason };
   if (typeof Engine !== 'undefined') {
@@ -761,6 +778,10 @@ function advanceRound() {
 
 function checkRoundState() {
   if (game.state !== 'live') return;
+  // En multijugador, la autoridad del fin de ronda la tiene exclusivamente el Host
+  if (window.Multiplayer && Multiplayer.active && !Multiplayer.isHost) {
+    return;
+  }
   let aliveCT = 0;
   let aliveT = 0;
 

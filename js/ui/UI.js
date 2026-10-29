@@ -843,17 +843,26 @@ function updateBuy(dt) {
 function updateLive(dt) {
   if (game.state !== 'live') return;
 
+  const isMultiClient = window.Multiplayer && Multiplayer.active && !Multiplayer.isHost;
+
   if (bomb.state !== 'planted') {
     game.roundTime -= dt;
     if (game.roundTime <= 0) {
       game.roundTime = 0;
-      endRound(true, 'Tiempo agotado · sitio A protegido');
+      if (!isMultiClient) {
+        endRound(true, 'Tiempo agotado · sitio A protegido');
+      }
       return;
     }
   }
 
   updatePlayer(dt);
-  updateBots(dt);
+
+  // En multijugador, la simulación física e IA de los bots corre únicamente en el Host
+  if (!isMultiClient) {
+    updateBots(dt);
+  }
+
   updateBomb(dt);
   updateEffects(dt);
 
@@ -863,12 +872,18 @@ function updateLive(dt) {
   if (!player.alive && game.state === 'live') {
     game.deathTimer -= dt;
     if (game.deathTimer <= 0) {
-      const allDead = bots.length > 0 && bots.every(b => !b.alive);
-      if (allDead && bomb.state !== 'planted') endRound(true, 'Terroristas eliminados');
-      else endRound(false, 'Has caído en combate');
+      if (!isMultiClient) {
+        const allDead = bots.length > 0 && bots.every(b => !b.alive);
+        if (allDead && bomb.state !== 'planted') endRound(true, 'Terroristas eliminados');
+        else endRound(false, 'Has caído en combate');
+      }
     }
   }
-  if (game.state === 'live') checkRoundState();
+
+  // Solo el Host (o monojugador) evalúa las condiciones de victoria de ronda
+  if (game.state === 'live' && !isMultiClient) {
+    checkRoundState();
+  }
 }
 
 function updateRoundOver(dt) {
