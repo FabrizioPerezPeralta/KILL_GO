@@ -468,7 +468,20 @@ const Multiplayer = (() => {
     if (typeof Engine !== 'undefined' && Engine.fsm) {
       Engine.fsm.transitionTo('buy');
     }
+    game.buyTimer = BUY_TIME;
+    game.buyExpired = false;
+    game.roundTime = ROUND_TIME;
+    game.damageFlash = 0;
+    game.damageDirTimer = 0;
+    game.deathTimer = 0;
+    game.roundOverDelay = 0;
+    game.roundOverShown = false;
+    game.siteClearShown = false;
+    game.lastResult = null;
+    game.matchOver = false;
+
     setupLocalPlayerForMultiplayer();
+    resetBomb();
     openBuyMenu();
     updateHUD();
   }
@@ -548,8 +561,12 @@ const Multiplayer = (() => {
     // Armas por bando
     if (player.team === 't') {
       player.slots = { 1: null, 2: gunObj('glock'), 3: { id: 'knife', mag: 0, reserve: 0 } };
+      player.hasBomb = true;
+      bomb.state = 'carried';
+      bomb.carrier = player;
     } else {
       player.slots = { 1: null, 2: gunObj('usp'), 3: { id: 'knife', mag: 0, reserve: 0 } };
+      player.hasBomb = false;
     }
     player.slot = 2;
     refillAmmo();
@@ -1149,6 +1166,7 @@ const Multiplayer = (() => {
     get fillBots() { return fillBots; },
     set fillBots(v) { fillBots = !!v; },
     get remotePlayers() { return remotePlayers; },
+    get roomPlayers() { return roomPlayers; },
     createRoom,
     joinRoom,
     leaveRoom,
@@ -1173,3 +1191,6 @@ const Multiplayer = (() => {
     updateLobbyUI
   };
 })();
+
+if (typeof window !== 'undefined') window.Multiplayer = Multiplayer;
+if (typeof globalThis !== 'undefined') globalThis.Multiplayer = Multiplayer;

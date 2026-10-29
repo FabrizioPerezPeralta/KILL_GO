@@ -843,7 +843,7 @@ function updateBuy(dt) {
 function updateLive(dt) {
   if (game.state !== 'live') return;
 
-  const isMultiClient = window.Multiplayer && Multiplayer.active && !Multiplayer.isHost;
+  const isMultiClient = typeof Multiplayer !== 'undefined' && Multiplayer && Multiplayer.active && !Multiplayer.isHost;
 
   if (bomb.state !== 'planted') {
     game.roundTime -= dt;

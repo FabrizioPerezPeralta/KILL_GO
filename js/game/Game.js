@@ -779,7 +779,8 @@ function advanceRound() {
 function checkRoundState() {
   if (game.state !== 'live') return;
   // En multijugador, la autoridad del fin de ronda la tiene exclusivamente el Host
-  if (window.Multiplayer && Multiplayer.active && !Multiplayer.isHost) {
+  const isMulti = typeof Multiplayer !== 'undefined' && Multiplayer && Multiplayer.active;
+  if (isMulti && !Multiplayer.isHost) {
     return;
   }
   let aliveCT = 0;
@@ -797,11 +798,24 @@ function checkRoundState() {
     }
   }
 
-  if (window.Multiplayer && Multiplayer.active) {
-    for (const rp of Multiplayer.getRemotePlayers()) {
+  if (isMulti) {
+    const remotes = Multiplayer.getRemotePlayers();
+    for (const rp of remotes) {
       if (rp.alive) {
         if (rp.team === 'ct') aliveCT++;
         else aliveT++;
+      }
+    }
+    // Salvaguarda: si algún jugador humano registrado en la sala aún no ha transmitido su primer tick, se considera vivo
+    if (Multiplayer.roomPlayers && Multiplayer.roomPlayers.length > 0) {
+      for (const rp of Multiplayer.roomPlayers) {
+        if (!rp.isHost) {
+          const hasTick = remotes.some(r => r.id === rp.id);
+          if (!hasTick) {
+            if (rp.team === 'ct') aliveCT++;
+            else aliveT++;
+          }
+        }
       }
     }
   }
